@@ -1,6 +1,6 @@
 {
   "name": "arca",
-  "version": "0.1.0-beta.2-dev.1",
+  "version": "0.1.0-beta.2",
   "module": "src/cli.ts",
   "type": "module",
   "private": true,

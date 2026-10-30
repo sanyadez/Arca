@@ -3,7 +3,7 @@
 Versions follow [semver](https://semver.org/). While on 0.x, the storage format and the API may change;
 a format change always bumps `FORMAT_VERSION` and is mentioned here.
 
-## Unreleased
+## 0.1.0-beta.2 — 2026-10-30
 
 - Clients (`arca client`, docs/clients.md): a machine backs up its own folders to the server. Sources
   `client://<client>/<folder>`; the client long-polls for jobs (works behind NAT), chunks, deduplicates and
@@ -11,12 +11,11 @@ a format change always bumps `FORMAT_VERSION` and is mentioned here.
   locks only, checked by hash). Schedules, history, live progress, cancel and retention work as for other sources.
   `arca client add|list|remove` on the server, `arca client enroll|run` on the machine, `install.sh --client`,
   the `arca-client` systemd unit. Client tokens (scope `client`) work only for the client API.
-
 - Web UI in the same binary: sign-in with a token (session cookie), overview, sources, snapshots with a file
   browser (new/changed against the parent), restore of selected files with verification, runs with live
   progress (server-sent events), repositories (create, check, prune with a preview), tokens with scopes and
-  expiry, a five-step source wizard with SSH setup, recovery kit, settings; light/dark, desktop and phone, English and Ukrainian (picked from the browser, switchable on the
-  sign-in page and in Settings).
+  expiry, a five-step source wizard with SSH setup, recovery kit, settings; light/dark, desktop and phone,
+  English and Ukrainian (picked from the browser, switchable on the sign-in page and in Settings).
 - The config file can be changed through the API (admin): atomic write, full validation, applied live.
 - File search across snapshots, forget by id, restore of several paths, prune dry-run, run log and
   queued status in the history, triggers carry the token name, snapshots are tagged scheduled/manual/mcp.
