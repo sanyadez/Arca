@@ -179,6 +179,15 @@ export class SftpBackend implements Backend {
   }
 
   /** Delete the whole repository (tests only). */
+  async usage() {
+    // `df` of the sftp client (statvfs extension): sizes in KiB.
+    const out = await this.run([`-df ${q(this.root)}`]).catch(() => "");
+    const line = out.split("\n").find((l) => /^\s*\d+\s+\d+\s+\d+/.test(l));
+    if (!line) return null;
+    const [size, used] = line.trim().split(/\s+/).map(Number);
+    return { total: size! * 1024, used: used! * 1024 };
+  }
+
   async destroyAll() {
     const cmds = [`-rm ${q(this.abs("config"))}`];
     const dirs: string[] = [];

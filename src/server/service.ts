@@ -13,10 +13,13 @@ import { withLock } from "../core/lock";
 import { walkTree, type ListedNode } from "../core/tree";
 import { isEmptyPolicy } from "../core/retention";
 import { formatBytes } from "../util";
+import { hostname } from "node:os";
+import { VERSION_STRING } from "../version";
 import { openSource } from "../sources";
 import { type Config, repoPassword } from "./config";
 import { Cron } from "./cron";
 import { RunsDb, type Run, type RunKind } from "./db";
+import { LiveRun } from "./live";
 
 export const DEFAULT_PRUNE = "30 4 * * 0";
 export const DEFAULT_CHECK = "0 5 * * *";
@@ -27,7 +30,7 @@ export class Service {
   readonly db: RunsDb;
   private repos = new Map<string, Promise<Repository>>();
   private queues = new Map<string, Promise<unknown>>();
-  private active = new Map<number, { kind: RunKind; repo: string; source: string | null; progress?: unknown; abort: AbortController }>();
+  private active = new Map<number, LiveRun>();
   private timer: ReturnType<typeof setTimeout> | undefined;
   private crons = new Map<string, Cron>();
 
@@ -78,7 +81,7 @@ export class Service {
     repo: string,
     source: string | null,
     trigger: string,
-    fn: (r: Repository, ctl: { signal: AbortSignal; progress: (p: unknown) => void }) => Promise<{
+    fn: (r: Repository, ctl: JobControl) => Promise<{
       status?: "ok" | "warning";
       summary: string;
       snapshot?: string;
@@ -86,35 +89,47 @@ export class Service {
     }>,
   ): { runId: number; done: Promise<Run> } {
     const runId = this.db.start(kind, repo, source, trigger);
-    const abort = new AbortController();
-    const entry: { kind: RunKind; repo: string; source: string | null; progress?: unknown; abort: AbortController } = {
-      kind,
-      repo,
-      source,
-      abort,
-    };
-    this.active.set(runId, entry);
+    const live = new LiveRun(runId, kind, repo, source, trigger);
+    this.active.set(runId, live);
     const done = this.serial(repo, async () => {
       const label = `${kind}${source ? " " + source : ""} → ${repo} (#${runId}, ${trigger})`;
+      const ctl: JobControl = {
+        signal: live.abort.signal,
+        progress: (p) => live.setProgress(p),
+        log: (stage, text) => live.addLog(stage, text),
+      };
       try {
+        if (live.abort.signal.aborted) throw new DOMException("cancelled while queued", "AbortError");
+        this.db.markRunning(runId);
+        live.setRunning();
+        live.addLog("run", `Run #${runId} started by ${trigger}: ${kind}${source ? " " + source : ""} → ${repo}`);
         const r = await this.repo(repo);
-        const res = await fn(r, { signal: abort.signal, progress: (p) => (entry.progress = p) });
-        this.db.finish(runId, res.status ?? "ok", res.summary, res);
+        const res = await fn(r, ctl);
+        live.addLog("run", `Finished: ${res.summary}`);
+        this.db.finish(runId, res.status ?? "ok", res.summary, { ...res, details: { ...(res.details as object), log: live.log.slice(-300) } });
         this.log(`${res.status === "warning" ? "WARNING" : "ok"}: ${label}: ${res.summary}`);
       } catch (e: any) {
-        const msg = e?.message ?? String(e);
-        this.db.finish(runId, "error", msg);
-        this.log(`ERROR: ${label}: ${msg}`);
+        const cancelled = e?.name === "AbortError";
+        const msg = cancelled ? cancelSummary(live) : (e?.message ?? String(e));
+        live.addLog("run", cancelled ? `Cancelled: ${msg}` : `Failed: ${msg}`);
+        this.db.finish(runId, cancelled ? "interrupted" : "error", msg, { details: { log: live.log.slice(-300) } });
+        this.log(`${cancelled ? "cancelled" : "ERROR"}: ${label}: ${msg}`);
       } finally {
         this.active.delete(runId);
+        live.finish(this.db.get(runId)!);
       }
+      if (kind !== "restore") void this.computeRepoStats(repo).catch((e) => this.log(`stats ${repo}: ${e?.message ?? e}`));
       return this.db.get(runId)!;
     });
     return { runId, done };
   }
 
   activeRuns() {
-    return [...this.active].map(([id, a]) => ({ id, kind: a.kind, repo: a.repo, source: a.source, progress: a.progress }));
+    return [...this.active.values()].map((a) => a.summary());
+  }
+
+  live(runId: number): LiveRun | undefined {
+    return this.active.get(runId);
   }
 
   cancel(runId: number): boolean {
@@ -137,19 +152,20 @@ export class Service {
           owner: s.owner,
           signal: ctl.signal,
           onProgress: ctl.progress,
+          onLog: ctl.log,
         }),
       ).finally(() => from.close());
       const st = r.snapshot.stats!;
-      let summary = `snapshot ${r.id.slice(0, 8)}: ${st.files} files, ${formatBytes(st.bytes)}, ${formatBytes(st.newBytes)} new, ${st.seconds} s`;
+      let summary = `+${formatBytes(st.newBytes)}, ${r.changed} file${r.changed === 1 ? "" : "s"} changed · snapshot ${r.id.slice(0, 8)}`;
       let forgotten: string[] = [];
       if (s.retention && !isEmptyPolicy(s.retention)) {
         const f = await withLock(repo, false, `forget ${sourceName}`, () =>
           forget(repo, s.retention!, { filter: (x) => x.source === sourceName }),
         );
         forgotten = f.removed;
-        if (forgotten.length) summary += `; retention removed ${forgotten.length}`;
+        if (forgotten.length) summary += ` · retention removed ${forgotten.length}`;
       }
-      if (r.errors.length) summary += `; read errors: ${r.errors.length}`;
+      if (r.errors.length) summary = `${r.errors.length} file${r.errors.length === 1 ? "" : "s"} unreadable · ${summary}`;
       return {
         status: r.errors.length ? "warning" : "ok",
         summary,
@@ -164,7 +180,7 @@ export class Service {
     return this.enqueue("prune", repoName, null, trigger, async (repo) => {
       await repo.reloadIndex();
       const p = await withLock(repo, true, "prune", () => prune(repo));
-      return { summary: `freed ${formatBytes(p.bytesFreed)}, packs deleted ${p.packsDeleted}, repacked ${p.packsRepacked}`, details: p };
+      return { summary: `${formatBytes(p.bytesFreed)} freed (${p.packsDeleted} packs deleted, ${p.packsRepacked} repacked)`, details: p };
     });
   }
 
@@ -176,8 +192,8 @@ export class Service {
       if (c.errors.length) throw new Error(`errors found: ${c.errors.length}; first: ${c.errors[0]}`);
       return {
         status: c.warnings.length ? "warning" : "ok",
-        summary: `no errors; snapshots ${c.snapshots}, packs ${c.packs}, data read in ${c.packsRead}` +
-          (c.warnings.length ? `; warnings ${c.warnings.length}` : ""),
+        summary: `${share >= 1 ? "read all data" : share > 0 ? `read ${Math.round(share * 100)}% of data` : "structure only"}, 0 errors` +
+          (c.warnings.length ? ` · ${c.warnings.length} warning${c.warnings.length === 1 ? "" : "s"}` : ""),
         details: c,
       };
     });
@@ -261,6 +277,129 @@ export class Service {
     }));
   }
 
+  // ── repository stats and the overview ──
+
+  /** Cached numbers of a repository; refreshed after every job, computed on first request. */
+  repoStats(name: string): RepoStats | null {
+    const cached = this.db.getValue<RepoStats>(`repo-stats:${name}`);
+    if (!cached && !this.statsPending.has(name)) void this.computeRepoStats(name).catch(() => {});
+    return cached;
+  }
+
+  private statsPending = new Set<string>();
+
+  async computeRepoStats(name: string): Promise<RepoStats> {
+    this.statsPending.add(name);
+    try {
+      const repo = await this.repo(name);
+      const [packs, snaps, usage] = await Promise.all([
+        repo.backend.list("data"),
+        repo.listSnapshots(),
+        repo.backend.usage?.().catch(() => null) ?? null,
+      ]);
+      const latest = new Map<string, number>();
+      for (const { snapshot: s } of snaps) latest.set(`${s.host}\0${s.source}`, s.stats?.bytes ?? 0);
+      const stored = packs.reduce((a, f) => a + f.size, 0);
+      const protectedBytes = [...latest.values()].reduce((a, b) => a + b, 0);
+      const stats: RepoStats = {
+        stored,
+        packs: packs.length,
+        snapshots: snaps.length,
+        protected: protectedBytes,
+        dedup: stored > 0 ? Math.round((protectedBytes / stored) * 10) / 10 : null,
+        usage,
+        computed: new Date().toISOString(),
+      };
+      this.db.setValue(`repo-stats:${name}`, stats);
+      return stats;
+    } finally {
+      this.statsPending.delete(name);
+    }
+  }
+
+  /** State of a source for the UI: running, or the status of its last backup. */
+  private sourceState(name: string) {
+    const running = [...this.active.values()].find((a) => a.kind === "backup" && a.source === name);
+    const last = this.db.lastOf("backup", name);
+    const good = last?.status === "ok" || last?.status === "warning" ? last : this.db.lastGood("backup", { source: name });
+    const status = running ? running.status : (last?.status ?? "never");
+    return { running, last, good, status };
+  }
+
+  overview() {
+    const now = Date.now();
+    const since = new Date(now - 86400_000).toISOString();
+    const sources = Object.entries(this.cfg.sources).map(([name, s]) => {
+      const st = this.sourceState(name);
+      const goodStats = (st.good?.details as { stats?: { bytes?: number } } | null)?.stats;
+      return {
+        name,
+        path: s.path,
+        repo: s.repo,
+        schedule: s.schedule ?? null,
+        next: s.schedule ? (this.cron(s.schedule).next()?.toISOString() ?? null) : null,
+        status: st.status,
+        lastBackup: st.good?.finished ?? null,
+        size: goodStats?.bytes ?? null,
+        runs: this.db.recentStatuses("backup", name, 14),
+        lastRun: st.last && { id: st.last.id, status: st.last.status, finished: st.last.finished, summary: st.last.summary },
+        progress: st.running?.progress ?? null,
+        runId: st.running?.id ?? null,
+      };
+    });
+    const repos = Object.entries(this.cfg.repos).map(([name, r]) => {
+      const check = this.db.list({ kind: "check", repo: name, limit: 1 })[0];
+      return {
+        name,
+        url: r.url,
+        stats: this.repoStats(name),
+        lastCheck: check && { id: check.id, status: check.status, finished: check.finished, summary: check.summary },
+      };
+    });
+    const attention = [
+      ...sources
+        .filter((s) => s.status === "error" || s.status === "warning")
+        .map((s) => ({ kind: "source" as const, name: s.name, status: s.status, summary: s.lastRun?.summary ?? "", at: s.lastRun?.finished ?? null, runId: s.lastRun?.id ?? null })),
+      ...repos
+        .filter((r) => r.lastCheck?.status === "error")
+        .map((r) => ({ kind: "repo" as const, name: r.name, status: "error", summary: r.lastCheck!.summary ?? "", at: r.lastCheck!.finished, runId: r.lastCheck!.id })),
+    ];
+    const upcoming: { at: string; kind: "backup" | "prune" | "check"; name: string }[] = [];
+    for (const s of sources) if (s.next) upcoming.push({ at: s.next, kind: "backup", name: s.name });
+    for (const [name, r] of Object.entries(this.cfg.repos)) {
+      for (const [kind, expr] of [["prune", r.prune ?? DEFAULT_PRUNE], ["check", r.check ?? DEFAULT_CHECK]] as const) {
+        const at = expr ? this.cron(expr).next()?.toISOString() : null;
+        if (at) upcoming.push({ at, kind, name });
+      }
+    }
+    upcoming.sort((a, b) => a.at.localeCompare(b.at));
+    const counts = this.db.statusCounts({ since });
+    const runs24 = Object.values(counts).reduce((a, b) => a + b, 0);
+    const protectedBytes = sources.reduce((a, s) => a + (s.size ?? 0), 0);
+    const stored = repos.reduce((a, r) => a + (r.stats?.stored ?? 0), 0);
+    return {
+      server: { version: VERSION_STRING, host: hostname() },
+      metrics: {
+        sources: {
+          total: sources.length,
+          ok: sources.filter((s) => s.status === "ok").length,
+          running: sources.filter((s) => s.status === "running" || s.status === "queued").length,
+          issues: attention.filter((a) => a.kind === "source").length,
+        },
+        protected: protectedBytes,
+        stored,
+        dedup: stored > 0 ? Math.round((protectedBytes / stored) * 10) / 10 : null,
+        runs24h: { total: runs24, ok: counts.ok ?? 0, warning: counts.warning ?? 0, error: counts.error ?? 0 },
+        next: upcoming.find((u) => u.kind === "backup") ?? null,
+      },
+      attention,
+      running: this.activeRuns(),
+      sources,
+      repos,
+      upcoming: upcoming.slice(0, 5),
+    };
+  }
+
   // ── scheduler ──
 
   private cron(expr: string) {
@@ -322,6 +461,31 @@ export class Service {
     for (const p of this.repos.values()) await (await p.catch(() => null))?.close();
     this.db.close();
   }
+}
+
+export interface RepoStats {
+  /** Bytes of pack files in the storage. */
+  stored: number;
+  packs: number;
+  snapshots: number;
+  /** Logical size of the newest snapshot of every source. */
+  protected: number;
+  dedup: number | null;
+  usage: { total: number; used: number } | null;
+  computed: string;
+}
+
+export interface JobControl {
+  signal: AbortSignal;
+  progress: (p: unknown) => void;
+  log: (stage: string, text: string) => void;
+}
+
+function cancelSummary(live: LiveRun): string {
+  if (live.status === "queued") return "cancelled while queued";
+  const p = live.progress as { bytesRead?: number; bytesToRead?: number } | undefined;
+  const pct = p?.bytesToRead ? Math.floor(((p.bytesRead ?? 0) / p.bytesToRead) * 100) : undefined;
+  return `cancelled${pct !== undefined ? ` at ${pct}%` : ""}${live.kind === "backup" ? ", no snapshot saved" : ""}`;
 }
 
 export class HttpError extends Error {

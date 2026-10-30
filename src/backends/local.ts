@@ -1,5 +1,5 @@
 /** Storage in a local directory (tests, external disk). */
-import { mkdir, open, readdir, rename, rm, stat } from "node:fs/promises";
+import { mkdir, open, readdir, rename, rm, stat, statfs } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { randomBytes } from "node:crypto";
 import { type Backend, type FileInfo, NotFoundError, checkPath } from "./types";
@@ -82,6 +82,12 @@ export class LocalBackend implements Backend {
 
   async exists(path: string) {
     return (await stat(this.abs(path)).catch(() => null))?.isFile() ?? false;
+  }
+
+  async usage() {
+    const s = await statfs(this.root).catch(() => null);
+    if (!s) return null;
+    return { total: s.blocks * s.bsize, used: (s.blocks - s.bfree) * s.bsize };
   }
 
   async close() {}

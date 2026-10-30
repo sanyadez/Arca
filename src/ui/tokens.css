@@ -1,0 +1,109 @@
+/* Arca design tokens (light/dark). Theme: <html data-theme="light|dark">; without the attribute it follows the system (prefers-color-scheme). */
+:root {
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --font-ui: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+  --radius-pill: 999px;
+  --font-display: 'Inter', system-ui, sans-serif;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+  /* text scale: 12 labels/badges, 13 tables and buttons, 14 body, 16 card title, 20 dialog, 24 page */
+  --text-xs: 12px; --text-sm: 13px; --text-md: 14px; --text-lg: 16px; --text-xl: 20px; --text-2xl: 24px;
+  --control-sm: 28px; --control-md: 32px; --field: 36px; --row: 44px; --sidebar: 232px;
+  --shadow-float: 0 8px 24px rgb(0 0 0 / 0.15);
+  color-scheme: light dark;
+}
+:root, [data-theme="light"] {
+  color-scheme: light;
+  --bg: #F7F7F5;
+  --surface: #FFFFFF;
+  --surface-2: #F0F0EC;
+  --border: #E4E4DF;
+  --text: #16181A;
+  --text-muted: #6B7075;
+  --accent: #0F766E;
+  --accent-soft: #E6F4F1;
+  --on-accent: #FFFFFF;
+  --ok: #16A34A;
+  --ok-soft: #E6F6EC;
+  --warn: #B45309;
+  --warn-soft: #FCF1DF;
+  --danger: #DC2626;
+  --danger-soft: #FCE9E9;
+  --info: #2563EB;
+  --info-soft: #E6EEFD;
+  --interrupted: #71717A;
+  --interrupted-soft: #EEEEF0;
+  --focus: #7FB8B2;
+  --accent-hover: #0B5F59;
+  --border-strong: #CFCFC8;
+  --tooltip: #16181A;
+  --on-tooltip: #FFFFFF;
+  --scrim: #16181A73;
+}
+[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0E1012;
+  --surface: #15181B;
+  --surface-2: #1C2024;
+  --border: #262B30;
+  --text: #ECEEF0;
+  --text-muted: #8B929A;
+  --accent: #2DD4BF;
+  --accent-soft: #0F2E2B;
+  --on-accent: #04211E;
+  --ok: #4ADE80;
+  --ok-soft: #12291B;
+  --warn: #FBBF24;
+  --warn-soft: #2C2210;
+  --danger: #F87171;
+  --danger-soft: #301A1B;
+  --info: #60A5FA;
+  --info-soft: #15233A;
+  --interrupted: #A1A1AA;
+  --interrupted-soft: #222427;
+  --focus: #1F6B62;
+  --accent-hover: #5EEAD4;
+  --border-strong: #363C43;
+  --tooltip: #2A2F35;
+  --on-tooltip: #ECEEF0;
+  --scrim: #000000A6;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --bg: #0E1012;
+    --surface: #15181B;
+    --surface-2: #1C2024;
+    --border: #262B30;
+    --text: #ECEEF0;
+    --text-muted: #8B929A;
+    --accent: #2DD4BF;
+    --accent-soft: #0F2E2B;
+    --on-accent: #04211E;
+    --ok: #4ADE80;
+    --ok-soft: #12291B;
+    --warn: #FBBF24;
+    --warn-soft: #2C2210;
+    --danger: #F87171;
+    --danger-soft: #301A1B;
+    --info: #60A5FA;
+    --info-soft: #15233A;
+    --interrupted: #A1A1AA;
+    --interrupted-soft: #222427;
+    --focus: #1F6B62;
+    --accent-hover: #5EEAD4;
+    --border-strong: #363C43;
+    --tooltip: #2A2F35;
+    --on-tooltip: #ECEEF0;
+    --scrim: #000000A6;
+  }
+}
+.num, code, .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }

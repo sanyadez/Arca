@@ -20,6 +20,8 @@ export interface Backend {
   list(dir: string): Promise<FileInfo[]>;
   delete(path: string): Promise<void>;
   exists(path: string): Promise<boolean>;
+  /** Space on the underlying disk, if the storage can tell. */
+  usage?(): Promise<{ total: number; used: number } | null>;
   close(): Promise<void>;
 }
 

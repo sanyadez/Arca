@@ -2,7 +2,7 @@ import type { ListedNode } from "./core/tree";
 
 export function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
-  const units = ["KB", "MB", "GB", "TB"];
+  const units = ["KiB", "MiB", "GiB", "TiB"];
   let v = n / 1024;
   let i = 0;
   while (v >= 1024 && i < units.length - 1) {

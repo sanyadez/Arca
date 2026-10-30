@@ -63,7 +63,7 @@ export const TOOLS: Tool[] = [
     description: "Run a source's backup now. The source's retention policy is applied after the backup.",
     scope: "backup",
     inputSchema: obj({ source: str("Source name (sources_list)"), ...waitProps }, ["source"]),
-    run: async (svc, a) => waitRun(svc, svc.runBackup(a.source, "mcp"), a.wait, a.timeoutSec),
+    run: async (svc, a, who) => waitRun(svc, svc.runBackup(a.source, `mcp:${who.name}`), a.wait, a.timeoutSec),
   },
   {
     name: "runs_list",
@@ -138,14 +138,14 @@ export const TOOLS: Tool[] = [
       },
       ["repo", "snapshot"],
     ),
-    run: async (svc, a) => waitRun(svc, svc.runRestore(a.repo, a.snapshot, { path: a.path, target: a.target }, "mcp"), a.wait, a.timeoutSec),
+    run: async (svc, a, who) => waitRun(svc, svc.runRestore(a.repo, a.snapshot, { path: a.path, target: a.target }, `mcp:${who.name}`), a.wait, a.timeoutSec),
   },
   {
     name: "repo_check",
     description: "Check repository integrity. readData is the share of packs (0..1) to download and decrypt.",
     scope: "backup",
     inputSchema: obj({ repo: str("Repository"), readData: { type: "number" }, ...waitProps }, ["repo"]),
-    run: async (svc, a) => waitRun(svc, svc.runCheck(a.repo, "mcp", a.readData), a.wait, a.timeoutSec),
+    run: async (svc, a, who) => waitRun(svc, svc.runCheck(a.repo, `mcp:${who.name}`, a.readData), a.wait, a.timeoutSec),
   },
 ];
 

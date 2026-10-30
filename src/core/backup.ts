@@ -9,6 +9,7 @@ import { basename, posix } from "node:path";
 import type { Repository, Snapshot, SnapshotStats } from "./repo";
 import { type Tree, type TreeNode, encodeTree, loadTree } from "./tree";
 import { LocalSource, type Source } from "./source";
+import { formatBytes } from "../util";
 
 export interface BackupOptions {
   /** What to back up: a source or a local directory path (the old root parameter, same thing). */
@@ -23,7 +24,28 @@ export interface BackupOptions {
   owner?: string;
   host?: string;
   signal?: AbortSignal;
-  onProgress?: (p: { files: number; bytes: number; path: string }) => void;
+  /** Called often with the same mutable object: copy it if it is kept. */
+  onProgress?: (p: BackupProgress) => void;
+  onLog?: (stage: string, text: string) => void;
+}
+
+export type BackupStage = "scan" | "read" | "write" | "done";
+
+export interface BackupProgress {
+  stage: BackupStage;
+  filesTotal: number;
+  filesNew: number;
+  filesChanged: number;
+  filesUnchanged: number;
+  /** Files and bytes the read pass has to go through. */
+  toRead: number;
+  bytesToRead: number;
+  filesRead: number;
+  bytesRead: number;
+  chunksNew: number;
+  chunksReused: number;
+  newBytes: number;
+  path?: string;
 }
 
 export interface BackupError {
@@ -33,6 +55,8 @@ export interface BackupError {
 
 export interface BackupResult {
   id: string;
+  /** Files that were new or changed since the parent snapshot. */
+  changed: number;
   snapshot: Snapshot;
   errors: BackupError[];
 }
@@ -84,6 +108,24 @@ export async function backup(repo: Repository, o: BackupOptions): Promise<Backup
 
   const ex = new Excluder(o.exclude);
   const stats: SnapshotStats = { files: 0, dirs: 0, bytes: 0, newBlobs: 0, newBytes: 0, errors: 0, seconds: 0 };
+  const prog: BackupProgress = {
+    stage: "scan",
+    filesTotal: 0,
+    filesNew: 0,
+    filesChanged: 0,
+    filesUnchanged: 0,
+    toRead: 0,
+    bytesToRead: 0,
+    filesRead: 0,
+    bytesRead: 0,
+    chunksNew: 0,
+    chunksReused: 0,
+    newBytes: 0,
+  };
+  const log = o.onLog ?? (() => {});
+  const progress = () => o.onProgress?.(prog);
+  progress();
+  log("scan", `Scanning ${src.label}${parentId ? `, parent snapshot ${parentId.slice(0, 8)}` : ""}`);
 
   // ── 1. state ──
   const listed = await src.list((rel) => ex.excluded(rel, true));
@@ -137,20 +179,42 @@ export async function backup(repo: Repository, o: BackupOptions): Promise<Backup
           n.content = p.content;
           stats.files++;
           stats.bytes += n.size!;
-        } else toRead.push(rel);
+          prog.filesUnchanged++;
+        } else {
+          toRead.push(rel);
+          prog.bytesToRead += n.size!;
+          if (p?.type === "file") prog.filesChanged++;
+          else prog.filesNew++;
+        }
+        prog.filesTotal++;
       }
     }
   };
   await compare("", parentTree);
+  prog.toRead = toRead.length;
+  for (const e of listed.errors) log("scan", `Cannot read ${e.path || "/"}: ${e.error}`);
+  log(
+    "scan",
+    `Done: ${prog.filesTotal} files, ${prog.filesNew} new, ${prog.filesChanged} changed, ${prog.filesUnchanged} unchanged`,
+  );
+  prog.stage = "read";
+  progress();
+  if (toRead.length) log("read", `${toRead.length} files to read, ${formatBytes(prog.bytesToRead)}`);
+  let lastLog = 0;
+  let loggedChunks = 0;
 
   // ── 2. content of changed files ──
   const failed = new Set<string>();
   for await (const item of src.read(toRead)) {
     o.signal?.throwIfAborted();
     const node = nodeOf.get(item.path)!;
+    prog.path = item.path;
     if (!item.reader) {
       errors.push({ path: item.path, error: item.error ?? "not read" });
       failed.add(item.path);
+      log("read", `Cannot read ${item.path}: ${item.error ?? "not read"}`);
+      prog.filesRead++;
+      progress();
       continue;
     }
     const content: string[] = [];
@@ -162,22 +226,43 @@ export async function backup(repo: Repository, o: BackupOptions): Promise<Backup
         if (added) {
           stats.newBlobs++;
           stats.newBytes += chunk.length;
-        }
+          prog.chunksNew++;
+          prog.newBytes += chunk.length;
+        } else prog.chunksReused++;
         content.push(id);
         size += chunk.length;
+        prog.bytesRead += chunk.length;
+        progress();
       }
     } catch (e: any) {
       if (e?.name === "AbortError") throw e;
       errors.push({ path: item.path, error: e?.message ?? String(e) });
       failed.add(item.path);
+      log("read", `Cannot read ${item.path}: ${e?.message ?? e}`);
+      prog.filesRead++;
       continue;
     }
     node.content = content;
     node.size = size; // what was actually read (the file may have changed between passes)
     stats.files++;
     stats.bytes += size;
-    o.onProgress?.({ files: stats.files, bytes: stats.bytes, path: item.path });
+    prog.filesRead++;
+    progress();
+    // Not every file: a sample per second keeps the log readable.
+    const now = Date.now();
+    if (now - lastLog >= 1000) {
+      lastLog = now;
+      log("read", item.path);
+      if (prog.chunksNew > loggedChunks) {
+        log("upload", `${prog.chunksNew} new chunks, ${formatBytes(prog.newBytes)}`);
+        loggedChunks = prog.chunksNew;
+      }
+    }
   }
+  prog.path = undefined;
+  prog.stage = "write";
+  progress();
+  log("write", `Read ${prog.filesRead} files; ${prog.chunksNew} new chunks, ${prog.chunksReused} reused`);
 
   // ── 3. trees, bottom up ──
   const saveDir = async (dir: string): Promise<string> => {
@@ -212,5 +297,8 @@ export async function backup(repo: Repository, o: BackupOptions): Promise<Backup
     stats,
   };
   const id = await repo.saveSnapshot(snapshot);
-  return { id, snapshot, errors };
+  prog.stage = "done";
+  progress();
+  log("write", `Snapshot ${id.slice(0, 8)} saved`);
+  return { id, snapshot, errors, changed: prog.filesNew + prog.filesChanged };
 }
