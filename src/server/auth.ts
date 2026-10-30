@@ -24,7 +24,7 @@ function findToken(tokens: TokenConf[], sha: string): TokenConf | null {
   const h = Buffer.from(sha, "hex");
   for (const t of tokens) {
     const want = Buffer.from(t.sha256, "hex");
-    if (want.length === h.length && timingSafeEqual(want, h)) return t;
+    if (want.length === h.length && timingSafeEqual(want, h)) return t.expires && Date.parse(t.expires) < Date.now() ? null : t;
   }
   return null;
 }

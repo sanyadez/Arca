@@ -5,10 +5,11 @@
 import type { TokenConf } from "./config";
 import { CSRF_HEADER, clearCookie, resolveCaller, startSession, tokenFromSecret } from "./auth";
 import { serveUi } from "./ui";
+import * as admin from "./admin";
 import { allowed, handleMcp, ownerFilter } from "./mcp";
 import { HttpError, type Service } from "./service";
 import type { Run } from "./db";
-import { VERSION_STRING } from "../version";
+import { VERSION, VERSION_STRING } from "../version";
 import { hostname } from "node:os";
 
 export { authenticate, hashToken } from "./auth";
@@ -37,6 +38,27 @@ const ROUTES: [string, string, TokenConf["scopes"][number], Handler][] = [
   ["GET", "/api/sources", "read", async (s) => s.sourcesInfo()],
   ["GET", "/api/repos", "read", async (s) => s.reposInfo()],
   ["GET", "/api/overview", "read", async (s) => s.overview()],
+  // admin: config changes and the helpers of the forms
+  ["POST", "/api/sources", "admin", async (s, _p, r) => admin.createSource(s, await jsonBody(r))],
+  ["PUT", "/api/sources/:name", "admin", async (s, p, r) => admin.updateSource(s, p.name!, await jsonBody(r))],
+  ["DELETE", "/api/sources/:name", "admin", async (s, p) => admin.deleteSource(s, p.name!)],
+  ["POST", "/api/sources/preview", "admin", async (s, _p, r) => admin.previewSource(s, await jsonBody(r))],
+  ["POST", "/api/repos", "admin", async (s, _p, r) => admin.createRepo(s, await jsonBody(r))],
+  ["POST", "/api/repos/test", "admin", async (_s, _p, r) => admin.testStorage((await jsonBody(r)).url)],
+  ["PUT", "/api/repos/:name", "admin", async (s, p, r) => admin.updateRepo(s, p.name!, await jsonBody(r))],
+  ["DELETE", "/api/repos/:name", "admin", async (s, p) => admin.removeRepo(s, p.name!)],
+  ["POST", "/api/repos/:name/prune-preview", "admin", async (s, p) => admin.prunePreview(s, p.name!)],
+  ["GET", "/api/tokens", "admin", async (s) => admin.listTokens(s)],
+  ["POST", "/api/tokens", "admin", async (s, _p, r) => admin.createToken(s, await jsonBody(r))],
+  ["DELETE", "/api/tokens/:name", "admin", async (s, p) => admin.revokeToken(s, p.name!)],
+  ["GET", "/api/ssh/key", "admin", async (s) => admin.sshKey(s)],
+  ["GET", "/api/cron", "read", async (_s, _p, _r, _w, u) => admin.cronPreview(u.searchParams.get("expr") ?? "")],
+  ["POST", "/api/retention/preview", "read", async (_s, _p, r) => {
+    const b = await jsonBody(r);
+    return admin.retentionPreview(String(b.schedule ?? ""), b.retention ?? {});
+  }],
+  ["GET", "/api/recovery", "read", async (s) => admin.recoveryInfo(s)],
+  ["PUT", "/api/recovery", "admin", async (s, _p, r) => admin.setRecoveryState(s, await jsonBody(r))],
   ["GET", "/api/sources/:name", "read", async (s, p) => s.sourceDetail(p.name!)],
   [
     "GET",
@@ -235,7 +257,15 @@ export function makeHandler(svc: Service) {
         );
       }
       const who = auth.who;
+      admin.noteTokenUse(svc, who, auth.via === "session" ? "web" : url.pathname === "/mcp" ? "MCP" : "API");
       if (url.pathname === "/mcp") return await handleMcp(svc, who, req);
+      if (url.pathname === "/api/recovery/arca-restore" && req.method === "GET") {
+        const bin = await admin.restoreBinary();
+        if (!bin) return Response.json({ error: "arca-restore is not next to this server's binary (development run?)" }, { status: 404 });
+        return new Response(Bun.file(bin.path), {
+          headers: { "Content-Type": "application/octet-stream", "Content-Disposition": `attachment; filename="arca-restore-${VERSION}-linux-${process.arch === "arm64" ? "arm64" : "x64"}"` },
+        });
+      }
 
       if (url.pathname === "/api/session") {
         if (req.method === "GET")

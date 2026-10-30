@@ -22,6 +22,7 @@ import { type Config, repoPassword } from "./config";
 import { Cron } from "./cron";
 import { RunsDb, type Run, type RunKind } from "./db";
 import { LiveRun } from "./live";
+import type { ConfigStore } from "./configstore";
 
 export const DEFAULT_PRUNE = "30 4 * * 0";
 export const DEFAULT_CHECK = "0 5 * * *";
@@ -40,8 +41,27 @@ export class Service {
     readonly cfg: Config,
     readonly log: Log = (m) => console.log(m),
     db?: RunsDb,
+    /** Lets the API change the config file (admin forms of the web UI). */
+    readonly configStore?: ConfigStore,
   ) {
     this.db = db ?? new RunsDb(join(cfg.dataDir, "runs.sqlite"));
+  }
+
+  /** Switch to a new config without a restart: open repositories whose address or password changed are reopened. */
+  applyConfig(next: Config) {
+    for (const [name, p] of this.repos) {
+      const a = this.cfg.repos[name];
+      const b = next.repos[name];
+      if (!b || a?.url !== b.url || a?.passwordFile !== b.passwordFile) {
+        this.repos.delete(name);
+        void p.then((r) => r.close()).catch(() => {});
+      }
+    }
+    this.cfg.tokens = next.tokens;
+    this.cfg.repos = next.repos;
+    this.cfg.sources = next.sources;
+    this.cfg.restoreRoot = next.restoreRoot;
+    this.log("config changed from the API");
   }
 
   // ── repositories ──
@@ -496,6 +516,7 @@ export class Service {
       return {
         name,
         url: r.url,
+        schedules: { check: r.check ?? DEFAULT_CHECK, prune: r.prune ?? DEFAULT_PRUNE, checkReadData: r.checkReadData ?? 0.05 },
         stats: this.repoStats(name),
         lastCheck: check && { id: check.id, status: check.status, finished: check.finished, summary: check.summary },
       };
@@ -522,7 +543,7 @@ export class Service {
     const protectedBytes = sources.reduce((a, s) => a + (s.size ?? 0), 0);
     const stored = repos.reduce((a, r) => a + (r.stats?.stored ?? 0), 0);
     return {
-      server: { version: VERSION_STRING, host: hostname(), restoreRoot: this.cfg.restoreRoot },
+      server: { version: VERSION_STRING, host: hostname(), restoreRoot: this.cfg.restoreRoot, configFile: this.configStore?.path ?? null, listen: this.cfg.listen, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone },
       metrics: {
         sources: {
           total: sources.length,

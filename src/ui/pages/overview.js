@@ -79,7 +79,7 @@ export async function page(el, _params, { session, navigate }) {
       <div class="two-col">
         <div class="card checklist">
           <div class="card-head"><span>Get started</span><span class="mono small muted" style="font-weight:400">0 of 3 done</span></div>
-          ${step(1, "current", "Create a repository", "Where encrypted backups live", h`<a class="btn primary" href="#/repositories">${icon("plus")}Create repository</a>`)}
+          ${step(1, "current", "Create a repository", "Where encrypted backups live", h`<a class="btn primary" href="#/repositories?new=1">${icon("plus")}Create repository</a>`)}
           ${step(2, "", "Add a source", "A folder here or on another machine", h`<span class="muted small">After step 1</span>`)}
           ${step(3, "", "Keep the recovery kit", h`<span class="mono">arca-restore</span> and the password, away from this server`, h`<span class="muted small">After step 1</span>`)}
         </div>

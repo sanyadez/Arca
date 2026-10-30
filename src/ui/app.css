@@ -435,3 +435,49 @@ table.t tr.sel td { background: var(--accent-soft); }
 .hits .list-row { height: auto; padding: 10px 20px; }
 @media (max-width: 1100px) { .browser { grid-template-columns: 1fr; } .tree-pane { position: static; max-height: 320px; } }
 @media (max-width: 767px) { .bulkbar { margin: 16px -16px -16px; padding: 12px 16px; } }
+.seg.wide { display: flex; width: 100%; }
+.seg.wide button { flex: 1; width: auto; height: 32px; gap: 6px; display: flex; align-items: center; justify-content: center; font-size: var(--text-sm); color: var(--text); }
+.seg.wide button .i { width: 14px; height: 14px; }
+.sheet { background: var(--surface-2); border-radius: var(--radius-md); padding: 18px; font-size: var(--text-sm); display: flex; flex-direction: column; gap: 4px; }
+.sheet-repo { border-top: 1px solid var(--border-strong); margin-top: 10px; padding-top: 10px; display: flex; flex-direction: column; gap: 2px; }
+.sheet-line { height: 28px; border-bottom: 1px solid var(--border-strong); }
+@media print {
+  body.print-sheet * { visibility: hidden; }
+  body.print-sheet #sheet, body.print-sheet #sheet * { visibility: visible; color: #000 !important; }
+  body.print-sheet #sheet { position: absolute; left: 0; top: 0; width: 100%; background: #fff; font-size: 12pt; padding: 0; }
+}
+
+/* ── stage 3: wizard, forms ── */
+.stepper { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }
+.stp { display: flex; align-items: center; gap: 8px; background: none; border: 0; padding: 0; cursor: pointer; font-size: var(--text-md); color: var(--text-muted); white-space: nowrap; }
+.stp:disabled { cursor: not-allowed; opacity: .7; }
+.stp .c { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; border: 1px solid var(--border-strong); font-size: var(--text-sm); }
+.stp .c .i { width: 14px; height: 14px; }
+.stp.cur { color: var(--text); font-weight: 600; }
+.stp.cur .c { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.stp.done { color: var(--text); }
+.stp.done .c { background: var(--accent-soft); border-color: var(--accent-soft); color: var(--accent); }
+.stp-line { flex: 1; height: 2px; background: var(--border); border-radius: 2px; min-width: 16px; }
+.stp-line.done { background: var(--accent); }
+.wiz-foot { position: sticky; bottom: 0; z-index: 10; display: flex; align-items: center; gap: 10px; margin: 24px -32px -32px; padding: 14px 32px; background: var(--surface); border-top: 1px solid var(--border); }
+.wiz-foot .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.choice { display: flex; align-items: center; gap: 16px; padding: 18px 20px; cursor: pointer; text-align: left; font: inherit; color: inherit; }
+.choice b { display: block; font-size: var(--text-md); }
+.choice .muted { display: block; font-size: var(--text-sm); }
+.choice-ic { width: 44px; height: 44px; border-radius: var(--radius-md); background: var(--surface-2); display: grid; place-items: center; flex: none; }
+.choice-ic .i { width: 20px; height: 20px; }
+.choice .radio { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--border-strong); flex: none; }
+.choice.on { border: 2px solid var(--accent); background: var(--accent-soft); padding: 17px 19px; }
+.choice.on .radio { border: 7px solid var(--accent); background: var(--surface); }
+.counter { display: inline-flex; align-items: center; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; flex: none; }
+.counter .btn { border: 0; border-radius: 0; width: 36px; height: 36px; font-size: 16px; }
+.counter span { width: 48px; text-align: center; }
+.btn.preset.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.tag .x { border: 0; background: none; padding: 0 0 0 4px; cursor: pointer; color: var(--text-muted); display: inline-grid; place-items: center; }
+.tag .x .i { width: 12px; height: 12px; }
+select.input { appearance: auto; }
+@media (max-width: 767px) {
+  .wiz-foot { margin: 16px -16px -16px; padding: 12px 16px; }
+  .stepper .stp span:last-child { display: none; }
+}
+.hint { font-size: var(--text-xs); color: var(--text-muted); }

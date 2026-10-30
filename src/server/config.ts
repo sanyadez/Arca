@@ -40,6 +40,9 @@ export interface TokenConf {
   owner?: string;
   /** What is allowed: read — browse; backup — run backup and check; restore — restore; admin — everything. */
   scopes: ("read" | "backup" | "restore" | "admin")[];
+  /** ISO times; a token past `expires` is refused. */
+  created?: string;
+  expires?: string;
 }
 
 export interface Config {
@@ -72,6 +75,8 @@ export function validateConfig(raw: any, baseDir: string): Config {
   for (const t of cfg.tokens) {
     if (!t.name || !/^[0-9a-f]{64}$/.test(t.sha256 ?? "")) err(`token ${t.name ?? "?"}: name and sha256 (64 hex) are required`);
     if (!Array.isArray(t.scopes) || t.scopes.length === 0) err(`token ${t.name}: scopes are required`);
+    if (t.scopes.some((s: string) => !["read", "backup", "restore", "admin"].includes(s))) err(`token ${t.name}: unknown scope`);
+    if (cfg.tokens.filter((x) => x.name === t.name).length > 1) err(`token name "${t.name}" is used twice`);
   }
   for (const [name, r] of Object.entries<any>(raw.repos ?? {})) {
     if (!NAME.test(name)) err(`invalid repository name "${name}"`);

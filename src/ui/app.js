@@ -22,7 +22,13 @@ const ROUTES = [
   ["runs", () => import("./pages/runs.js")],
   ["runs/:id", () => import("./pages/run.js")],
   ["sources", () => import("./pages/sources.js")],
+  ["sources/new", () => import("./pages/sourceform.js")],
   ["sources/:name", () => import("./pages/source.js")],
+  ["sources/:name/edit", () => import("./pages/sourceform.js")],
+  ["repositories", () => import("./pages/repositories.js")],
+  ["access", () => import("./pages/access.js")],
+  ["recovery", () => import("./pages/recovery.js")],
+  ["settings", () => import("./pages/settings.js")],
   ["snapshots", () => import("./pages/snapshots.js")],
   ["snapshots/:repo/:id", () => import("./pages/snapshot.js")],
 ];

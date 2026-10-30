@@ -2,11 +2,12 @@
 import { loadConfig } from "./config";
 import { makeHandler } from "./http";
 import { Service } from "./service";
+import { ConfigStore } from "./configstore";
 import { VERSION_STRING } from "../version";
 
 const path = process.argv[2] ?? process.env.ARCA_CONFIG ?? "config.json";
 const cfg = await loadConfig(path);
-const svc = new Service(cfg, (m) => console.log(`${new Date().toISOString()} ${m}`));
+const svc = new Service(cfg, (m) => console.log(`${new Date().toISOString()} ${m}`), undefined, new ConfigStore(path));
 
 if (cfg.tokens.length === 0) console.warn("Warning: the config has no tokens — the API and MCP are inaccessible to everyone");
 
