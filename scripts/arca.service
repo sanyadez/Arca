@@ -1,0 +1,16 @@
+[Unit]
+Description=Arca encrypted backups
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/var/lib/arca
+ExecStart=/opt/arca/current/arca serve /etc/arca/config.json
+Restart=on-failure
+RestartSec=5
+# Schedules use the local time zone; set Environment=TZ=… to override it.
+# SSH/SFTP keys and known_hosts are those of the user the service runs as (root by default).
+
+[Install]
+WantedBy=multi-user.target

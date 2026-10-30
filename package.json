@@ -1,0 +1,27 @@
+{
+  "name": "arca",
+  "version": "0.1.0",
+  "module": "src/cli.ts",
+  "type": "module",
+  "private": true,
+  "bin": {
+    "arca": "src/cli.ts"
+  },
+  "scripts": {
+    "cli": "bun src/cli.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test",
+    "release": "scripts/release.sh"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sanyadez/Arca.git"
+  }
+}

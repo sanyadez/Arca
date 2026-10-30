@@ -1,0 +1,65 @@
+{
+  "listen": {
+    "host": "0.0.0.0",
+    "port": 7350
+  },
+  "dataDir": "/var/lib/arca",
+  "restoreRoot": "/var/lib/arca/restore",
+  "tokens": [
+    {
+      "name": "admin",
+      "sha256": "<output of: arca token admin>",
+      "scopes": [
+        "admin"
+      ]
+    },
+    {
+      "name": "agents",
+      "sha256": "<…>",
+      "scopes": [
+        "read",
+        "backup"
+      ]
+    }
+  ],
+  "repos": {
+    "main": {
+      "url": "sftp://arca@192.0.2.30/data/repo",
+      "passwordFile": "/etc/arca/repo.pass",
+      "prune": "30 4 * * 0",
+      "check": "0 5 * * *",
+      "checkReadData": 0.05
+    }
+  },
+  "sources": {
+    "data": {
+      "path": "/srv/data",
+      "repo": "main",
+      "schedule": "0 */6 * * *",
+      "exclude": [
+        "node_modules/",
+        "*.log",
+        ".cache/"
+      ],
+      "retention": {
+        "last": 4,
+        "daily": 7,
+        "weekly": 4,
+        "monthly": 6
+      }
+    },
+    "remote-configs": {
+      "path": "ssh://arca-src@192.0.2.20/etc/nginx",
+      "repo": "main",
+      "schedule": "15 3 * * *",
+      "ssh": {
+        "forced": true,
+        "identity": "/etc/arca/source_ed25519"
+      },
+      "retention": {
+        "daily": 7,
+        "weekly": 4
+      }
+    }
+  }
+}
