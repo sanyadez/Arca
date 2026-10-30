@@ -21,7 +21,7 @@ import { HttpError, type Service } from "./service";
 import { VERSION } from "../version";
 
 const NAME = /^[a-z0-9][a-z0-9_-]{0,62}$/;
-const SCOPES = ["read", "backup", "restore", "admin"] as const;
+const SCOPES = ["read", "backup", "restore", "admin", "client"] as const;
 
 function store(svc: Service) {
   if (!svc.configStore) throw new HttpError(409, "This server was started without a config file, so it cannot change it");
@@ -216,6 +216,7 @@ export async function createToken(svc: Service, b: any) {
   if (svc.cfg.tokens.some((t) => t.name === name)) throw new HttpError(409, `A token named ${name} already exists`);
   const scopes = Array.isArray(b.scopes) ? [...new Set(b.scopes.map(String))] : [];
   if (!scopes.length || scopes.some((s) => !(SCOPES as readonly string[]).includes(s as string))) throw new HttpError(400, `scopes: some of ${SCOPES.join(", ")}`);
+  if (scopes.includes("client") && scopes.length > 1) throw new HttpError(400, "The client scope cannot be combined with others");
   const days = Number(b.expiresDays ?? 0);
   const secret = `arca_${randomBytes(24).toString("base64url")}`;
   const entry: TokenConf = {
@@ -245,7 +246,7 @@ export async function revokeToken(svc: Service, name: string) {
 }
 
 /** Remember when and how a token was last used (at most once a minute per token). */
-export function noteTokenUse(svc: Service, t: TokenConf, via: "web" | "API" | "MCP") {
+export function noteTokenUse(svc: Service, t: TokenConf, via: "web" | "API" | "MCP" | "client") {
   const k = `token-use:${t.sha256}`;
   const cur = svc.db.getValue<{ last: string; via: string[] }>(k);
   const now = Date.now();

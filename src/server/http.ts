@@ -11,6 +11,7 @@ import { HttpError, type Service } from "./service";
 import type { Run } from "./db";
 import { VERSION, VERSION_STRING } from "../version";
 import { hostname } from "node:os";
+import { isClientSource, parseClientUrl } from "../sources";
 
 export { authenticate, hashToken } from "./auth";
 
@@ -230,6 +231,31 @@ function runEvents(svc: Service, id: number, req: Request): Response {
 
 const noStore = { "Cache-Control": "no-store" };
 
+/** The API of `arca client` (clients.ts): only for tokens with the client scope; the token name is the client. */
+async function clientApi(svc: Service, who: TokenConf, req: Request, url: URL): Promise<Response> {
+  const name = who.name;
+  const p = url.pathname.slice("/api/client".length);
+  svc.clients.touch(name, { version: req.headers.get("x-arca-version") ?? undefined, host: req.headers.get("x-arca-host") ?? undefined });
+  if (p === "/hello" && req.method === "GET") {
+    const sources = Object.entries(svc.cfg.sources)
+      .filter(([, s]) => isClientSource(s.path) && parseClientUrl(s.path).client === name)
+      .map(([n, s]) => ({ name: n, path: parseClientUrl(s.path).path, repo: s.repo, schedule: s.schedule ?? null }));
+    return Response.json({ client: name, server: { version: VERSION_STRING, host: hostname() }, sources }, { headers: noStore });
+  }
+  if (p === "/poll" && req.method === "GET") {
+    const job = await svc.clients.poll(name, Number(url.searchParams.get("wait") ?? 25) * 1000, req.signal);
+    return Response.json({ job }, { headers: noStore });
+  }
+  const run = /^\/runs\/(\d+)\/(events|finish)$/.exec(p);
+  if (run && req.method === "POST") {
+    const b = await jsonBody(req);
+    return Response.json(run[2] === "events" ? svc.clients.event(name, Number(run[1]), b) : svc.clients.finish(name, Number(run[1]), b));
+  }
+  const st = /^\/storage\/([^/]+)\/(.+)$/.exec(p);
+  if (st) return svc.clients.storage(name, decodeURIComponent(st[1]!), st[2]!, req, url);
+  return Response.json({ error: "Not found" }, { status: 404 });
+}
+
 export function makeHandler(svc: Service) {
   return async (req: Request): Promise<Response> => {
     const url = new URL(req.url);
@@ -240,7 +266,8 @@ export function makeHandler(svc: Service) {
       // Sign-in: exchange a token for a session cookie.
       if (url.pathname === "/api/session" && req.method === "POST") {
         const b = await jsonBody(req);
-        const who = typeof b.token === "string" ? tokenFromSecret(svc.cfg.tokens, b.token) : null;
+        const found = typeof b.token === "string" ? tokenFromSecret(svc.cfg.tokens, b.token) : null;
+        const who = found?.scopes.includes("client") ? null : found; // client tokens are for machines, not for the web UI
         if (!who) {
           await Bun.sleep(400); // slows down guessing
           return Response.json({ error: "This token is not valid on this server", reason: "invalid" }, { status: 401, headers: noStore });
@@ -258,7 +285,10 @@ export function makeHandler(svc: Service) {
         );
       }
       const who = auth.who;
-      admin.noteTokenUse(svc, who, auth.via === "session" ? "web" : url.pathname === "/mcp" ? "MCP" : "API");
+      if (who.scopes.includes("client") !== url.pathname.startsWith("/api/client/"))
+        return Response.json({ error: who.scopes.includes("client") ? "A client token works only for the client API" : "The client API needs a client token" }, { status: 403 });
+      admin.noteTokenUse(svc, who, who.scopes.includes("client") ? "client" : auth.via === "session" ? "web" : url.pathname === "/mcp" ? "MCP" : "API");
+      if (who.scopes.includes("client")) return await clientApi(svc, who, req, url);
       if (url.pathname === "/mcp") return await handleMcp(svc, who, req);
       if (url.pathname === "/api/recovery/arca-restore" && req.method === "GET") {
         const bin = await admin.restoreBinary();

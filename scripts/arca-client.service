@@ -1,0 +1,14 @@
+[Unit]
+Description=Arca backup client
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/opt/arca/current/arca client run --client-config /etc/arca/client.json
+Restart=always
+RestartSec=10
+# Runs as root to read every folder the server asks for; a dedicated user works too if it can read them.
+
+[Install]
+WantedBy=multi-user.target

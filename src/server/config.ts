@@ -8,7 +8,7 @@ import { readFile } from "node:fs/promises";
 import { dirname, isAbsolute, resolve } from "node:path";
 import type { RetentionPolicy } from "../core/retention";
 import { Cron } from "./cron";
-import { isRemoteSource, openSource, type SshExtra } from "../sources";
+import { isClientSource, isRemoteSource, openSource, parseClientUrl, type SshExtra } from "../sources";
 
 export interface RepoConf {
   url: string;
@@ -21,7 +21,7 @@ export interface RepoConf {
 }
 
 export interface SourceConf {
-  /** Local directory or ssh://user@host[:port]/path. */
+  /** Local directory, ssh://user@host[:port]/path or client://<client>/path (a machine running `arca client`). */
   path: string;
   /** For ssh://: key, forced arca-src command on the source, extra -o options. */
   ssh?: Pick<SshExtra, "identity" | "forced" | "sshOptions">;
@@ -38,8 +38,12 @@ export interface TokenConf {
   sha256: string;
   /** Whose snapshots the token sees; for now all tokens belong to owner "default". */
   owner?: string;
-  /** What is allowed: read — browse; backup — run backup and check; restore — restore; admin — everything. */
-  scopes: ("read" | "backup" | "restore" | "admin")[];
+  /**
+   * What is allowed: read — browse; backup — run backup and check; restore — restore; admin — everything.
+   * client — a machine running `arca client` (the token name is the client name); it allows only the
+   * client API and cannot be combined with other scopes.
+   */
+  scopes: ("read" | "backup" | "restore" | "admin" | "client")[];
   /** ISO times; a token past `expires` is refused. */
   created?: string;
   expires?: string;
@@ -75,7 +79,8 @@ export function validateConfig(raw: any, baseDir: string): Config {
   for (const t of cfg.tokens) {
     if (!t.name || !/^[0-9a-f]{64}$/.test(t.sha256 ?? "")) err(`token ${t.name ?? "?"}: name and sha256 (64 hex) are required`);
     if (!Array.isArray(t.scopes) || t.scopes.length === 0) err(`token ${t.name}: scopes are required`);
-    if (t.scopes.some((s: string) => !["read", "backup", "restore", "admin"].includes(s))) err(`token ${t.name}: unknown scope`);
+    if (t.scopes.some((s: string) => !["read", "backup", "restore", "admin", "client"].includes(s))) err(`token ${t.name}: unknown scope`);
+    if (t.scopes.includes("client") && t.scopes.length > 1) err(`token ${t.name}: the client scope cannot be combined with others`);
     if (cfg.tokens.filter((x) => x.name === t.name).length > 1) err(`token name "${t.name}" is used twice`);
   }
   for (const [name, r] of Object.entries<any>(raw.repos ?? {})) {
@@ -90,7 +95,8 @@ export function validateConfig(raw: any, baseDir: string): Config {
     if (!cfg.repos[s.repo]) err(`source ${name}: unknown repository "${s.repo}"`);
     if (s.schedule) new Cron(s.schedule);
     const path = isRemoteSource(s.path) ? s.path : abs(s.path);
-    openSource(path, s.ssh); // validate the address
+    if (isClientSource(path)) parseClientUrl(path);
+    else openSource(path, s.ssh); // validate the address
     cfg.sources[name] = { ...s, path, ssh: s.ssh?.identity ? { ...s.ssh, identity: abs(s.ssh.identity) } : s.ssh };
   }
   return cfg;

@@ -5,6 +5,13 @@ a format change always bumps `FORMAT_VERSION` and is mentioned here.
 
 ## Unreleased
 
+- Clients (`arca client`, docs/clients.md): a machine backs up its own folders to the server. Sources
+  `client://<client>/<folder>`; the client long-polls for jobs (works behind NAT), chunks, deduplicates and
+  encrypts locally, and writes through an append-only storage proxy on the server (new content-named files and
+  locks only, checked by hash). Schedules, history, live progress, cancel and retention work as for other sources.
+  `arca client add|list|remove` on the server, `arca client enroll|run` on the machine, `install.sh --client`,
+  the `arca-client` systemd unit. Client tokens (scope `client`) work only for the client API.
+
 - Web UI in the same binary: sign-in with a token (session cookie), overview, sources, snapshots with a file
   browser (new/changed against the parent), restore of selected files with verification, runs with live
   progress (server-sent events), repositories (create, check, prune with a preview), tokens with scopes and

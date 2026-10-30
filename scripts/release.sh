@@ -30,7 +30,7 @@ for t in $TARGETS; do
     bun build "src/$src.ts" --compile --minify --target="bun-$t" \
       --define "BUILD_COMMIT=\"$COMMIT\"" --outfile "$stage/$name$ext" >/dev/null
   done
-  cp README.md README.uk.md FORMAT.md CHANGELOG.md config.example.json scripts/arca.service scripts/arca-src.sh docs/ssh-sources.md "$stage/"
+  cp README.md README.uk.md FORMAT.md CHANGELOG.md config.example.json scripts/arca.service scripts/arca-client.service scripts/arca-src.sh docs/ssh-sources.md docs/clients.md "$stage/"
   tar -C "$TMP" -czf "$OUT/arca-$VERSION-$t.tar.gz" "arca-$VERSION-$t"
   cp "$stage/arca-restore$ext" "$OUT/arca-restore-$VERSION-$t$ext"
   echo "built $t"

@@ -9,11 +9,16 @@
 # /etc/arca/config.json with a new admin token (printed once at the end) and starts the `arca` systemd
 # service. Running it again updates Arca to the newest release and keeps the config and the data.
 #
+# With --client it sets the machine up as a client of an Arca server instead (docs/clients.md): it saves
+# the server address and the client token to /etc/arca/client.json and starts the `arca-client` service.
+# Get the full command on the server with  arca client add <name>.
+#
 # Options (after `sh -s --`):
 #   --version <tag>   install this release instead of the newest (also: ARCA_VERSION), e.g. v0.1.0-beta.1
 #   --port <number>   port for the API and MCP on the first install (default: 7350)
+#   --client          set up a client: needs --server <url> and --token <client token>
 #   --no-service      install the binaries only; do not touch systemd
-#   --uninstall       remove the binaries and the service; /etc/arca and /var/lib/arca are kept
+#   --uninstall       remove the binaries and the services; /etc/arca and /var/lib/arca are kept
 #
 # ARCA_DOWNLOAD_URL overrides where the files are taken from (a directory URL holding the release
 # archive and SHA256SUMS) — for mirrors and for testing.
@@ -25,6 +30,9 @@ VERSION="${ARCA_VERSION:-latest}"
 PORT=7350
 SERVICE=1
 UNINSTALL=0
+CLIENT=0
+SERVER_URL=""
+CLIENT_TOKEN=""
 PREFIX=/opt/arca
 CONF_DIR=/etc/arca
 DATA_DIR=/var/lib/arca
@@ -49,10 +57,21 @@ while [ $# -gt 0 ]; do
       PORT="$2"
       shift
       ;;
+    --client) CLIENT=1 ;;
+    --server)
+      [ $# -ge 2 ] || die "--server needs the server address, e.g. http://backup.lan:7350"
+      SERVER_URL="$2"
+      shift
+      ;;
+    --token)
+      [ $# -ge 2 ] || die "--token needs the client token"
+      CLIENT_TOKEN="$2"
+      shift
+      ;;
     --no-service) SERVICE=0 ;;
     --uninstall) UNINSTALL=1 ;;
     -h | --help)
-      sed -n '2,22p' "$0" 2>/dev/null | sed 's/^# \{0,1\}//' || true
+      sed -n '2,27p' "$0" 2>/dev/null | sed 's/^# \{0,1\}//' || true
       exit 0
       ;;
     *) die "unknown option: $1" ;;
@@ -60,6 +79,9 @@ while [ $# -gt 0 ]; do
   shift
 done
 
+if [ "$CLIENT" -eq 1 ] && [ "$UNINSTALL" -eq 0 ]; then
+  [ -n "$SERVER_URL" ] && [ -n "$CLIENT_TOKEN" ] || die "--client needs --server <url> and --token <token> (see: arca client add on the server)."
+fi
 [ "$(uname -s)" = "Linux" ] || die "Arca runs on Linux; this is $(uname -s)."
 [ "$(id -u)" -eq 0 ] || die "this needs root: put sudo before sh."
 HAVE_SYSTEMD=0
@@ -69,9 +91,12 @@ command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ] && HAVE_SYSTE
 
 if [ "$UNINSTALL" -eq 1 ]; then
   step "Removing Arca"
-  if [ "$HAVE_SYSTEMD" -eq 1 ] && [ -f /etc/systemd/system/arca.service ]; then
-    systemctl disable --now arca >/dev/null 2>&1 || true
-    rm -f /etc/systemd/system/arca.service
+  if [ "$HAVE_SYSTEMD" -eq 1 ]; then
+    for unit in arca arca-client; do
+      [ -f "/etc/systemd/system/$unit.service" ] || continue
+      systemctl disable --now "$unit" >/dev/null 2>&1 || true
+      rm -f "/etc/systemd/system/$unit.service"
+    done
     systemctl daemon-reload
   fi
   rm -f /usr/local/bin/arca /usr/local/bin/arca-restore
@@ -156,6 +181,32 @@ ln -sfn "$PREFIX/current/arca-restore" /usr/local/bin/arca-restore
 ls -1t "$PREFIX/releases" | tail -n +$((KEEP_RELEASES + 1)) | while read -r old; do
   [ "$old" = "$NEW_VERSION" ] || rm -rf "${PREFIX:?}/releases/$old"
 done
+
+# --- Client: save the server address and the token, start arca-client -----------------------------
+
+if [ "$CLIENT" -eq 1 ]; then
+  step "Connecting to $SERVER_URL"
+  mkdir -p "$CONF_DIR"
+  chmod 700 "$CONF_DIR"
+  /usr/local/bin/arca client enroll --server "$SERVER_URL" --token "$CLIENT_TOKEN" --client-config "$CONF_DIR/client.json" ||
+    die "could not connect with this token; check the address and the token."
+  if [ "$SERVICE" -eq 1 ] && [ "$HAVE_SYSTEMD" -eq 1 ]; then
+    step "Starting the arca-client service"
+    [ -f "$PREFIX/current/arca-client.service" ] || die "this release has no arca-client.service; install a newer one."
+    cp "$PREFIX/current/arca-client.service" /etc/systemd/system/arca-client.service
+    systemctl daemon-reload
+    systemctl enable -q arca-client
+    systemctl restart arca-client
+    sleep 1
+    systemctl is-active -q arca-client || die "the client did not start; see: journalctl -u arca-client"
+    say "The client is running and waits for jobs from the server."
+  elif [ "$SERVICE" -eq 1 ]; then
+    say "systemd was not found: start the client yourself with  arca client run"
+  fi
+  step "Arca $NEW_VERSION is installed as a client"
+  say "Add this machine's folders on the server as sources with the path client://<client name>/<folder>."
+  exit 0
+fi
 
 # --- First install: config and token --------------------------------------------------------------
 

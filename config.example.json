@@ -20,6 +20,13 @@
         "read",
         "backup"
       ]
+    },
+    {
+      "name": "laptop",
+      "sha256": "<created by: arca client add laptop>",
+      "scopes": [
+        "client"
+      ]
     }
   ],
   "repos": {
@@ -29,6 +36,10 @@
       "prune": "30 4 * * 0",
       "check": "0 5 * * *",
       "checkReadData": 0.05
+    },
+    "laptop": {
+      "url": "sftp://arca@192.0.2.30/data/laptop",
+      "passwordFile": "/etc/arca/laptop.pass"
     }
   },
   "sources": {
@@ -59,6 +70,18 @@
       "retention": {
         "daily": 7,
         "weekly": 4
+      }
+    },
+    "laptop-home": {
+      "path": "client://laptop/home/me",
+      "repo": "laptop",
+      "schedule": "0 13 * * *",
+      "exclude": [
+        ".cache/"
+      ],
+      "retention": {
+        "daily": 14,
+        "monthly": 6
       }
     }
   }

@@ -36,7 +36,9 @@ Chunk ids are keyed hashes, so the storage cannot even check whether it holds a 
 No agent. The server connects over SSH and asks two things: the state of all files (one `find`) and the
 contents of the changed ones (one `tar` stream). A machine needs OpenSSH, GNU find and GNU tar — any ordinary
 Debian or Ubuntu. The key can be tied to a forced command that only allows reading the chosen folders:
-[docs/ssh-sources.md](docs/ssh-sources.md). A small client for machines the server cannot reach is planned.
+[docs/ssh-sources.md](docs/ssh-sources.md). For machines the server cannot reach (a laptop, a VPS, a box behind NAT)
+there is a client: the same binary as a small service that calls the server, encrypts on the machine and can only add
+to the repository, never delete: [docs/clients.md](docs/clients.md).
 
 **What if the server itself is gone?**
 `arca-restore` is a separate binary in every release. Give it the repository address and the password, and
@@ -68,7 +70,8 @@ Works now:
 - Deduplication by content-defined chunks (FastCDC), across files and snapshots; zstd compression.
 - AES-256-GCM, a separate key per repository behind a password (scrypt); several passwords per repository.
 - Storage: a local folder, SFTP (through the system OpenSSH).
-- Sources: local folders and folders on other machines over SSH, with an optional forced command.
+- Sources: local folders, folders on other machines over SSH (with an optional forced command), and clients:
+  machines that back up their own folders to the server, encrypting locally, append-only.
 - Restore of a whole snapshot or a part of it into a new folder; existing files are never overwritten.
 - Retention (`forget`), garbage collection (`prune`), integrity checks (`check --read-data`), repository locks.
 - The server: schedules, retention after each backup, scheduled prune and check, run history, HTTP API with tokens.
@@ -78,7 +81,7 @@ Works now:
 - `arca-restore`: restore without the server.
 
 Planned: S3 and other cloud storage, several storages per source, database dumps, notifications, several users,
-a client for remote machines.
+clients in the web UI and restore onto a client.
 
 ## Install
 
@@ -104,7 +107,7 @@ systemctl restart arca
 ```
 
 Manual install: a release has `arca-<version>-<target>.tar.gz` — the `arca` and `arca-restore` binaries, an
-example config, a systemd unit and the SSH forced-command script — plus `arca-restore-<version>-<target>` on its
+example config, systemd units for the server and the client, and the SSH forced-command script — plus `arca-restore-<version>-<target>` on its
 own and `SHA256SUMS`. Targets: `linux-x64`, `linux-arm64`. Bun is not needed.
 
 ## Commands
@@ -128,6 +131,12 @@ Without the server:
 ```sh
 arca-restore snapshots --repo sftp://arca@192.0.2.30/data/repo
 arca-restore restore latest --source web-data --target /tmp/restored
+```
+
+A machine as a client of the server ([docs/clients.md](docs/clients.md)):
+
+```sh
+arca client add laptop --server http://backup.lan:7350   # on the server: prints the install command
 ```
 
 `arca --help` and `arca-restore --help` list everything.

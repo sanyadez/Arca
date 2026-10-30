@@ -38,6 +38,12 @@ Commands:
   token [name]                      generate an API/MCP token and the line for the server config
   serve [config]                    run the server (see config.example.json)
 
+Clients (machines that back up their own folders to this server, docs/clients.md):
+  client add <name> [--server URL]  on the server: create a client token and print the install command
+  client list | client remove <name>  on the server (--config, default /etc/arca/config.json)
+  client enroll --server URL --token T  on the machine: check the token and save it (--client-config)
+  client run                        on the machine: wait for jobs from the server and run them
+
 Common options:
   --repo <url>                      path, local:/path or sftp://user@host[:port]/path
   --password-file <file>
@@ -46,6 +52,92 @@ Common options:
 `;
 
 const num = (v: unknown) => (v === undefined ? undefined : Number(v));
+
+type Out = (human: string, data: unknown) => void;
+
+async function clientCommand(pos: string[], o: Record<string, unknown>, out: Out) {
+  const sub = pos.shift();
+  const agent = await import("./client/agent");
+  const clientConfig = String(o["client-config"] ?? agent.DEFAULT_CLIENT_CONFIG);
+  if (sub === "enroll") {
+    if (!o.server || !o.token) throw new Error("client enroll needs --server and --token");
+    const cfg = { server: String(o.server).replace(/\/+$/, ""), token: String(o.token) };
+    const h = await new agent.ClientAgent(cfg).hello();
+    await agent.saveClientConfig(clientConfig, cfg);
+    out(`Connected to ${h.server.host} (Arca ${h.server.version}) as client ${h.client}. Saved ${clientConfig}.\n` +
+      (h.sources.length ? `Sources: ${h.sources.map((s) => `${s.name} = ${s.path}`).join(", ")}` : "No sources for this client yet: add them on the server as client://" + h.client + "/<path>."), h);
+    return;
+  }
+  if (sub === "run") {
+    const a = new agent.ClientAgent(await agent.loadClientConfig(clientConfig));
+    for (const sig of ["SIGINT", "SIGTERM"] as const) process.on(sig, () => void a.stop());
+    await a.run();
+    return;
+  }
+
+  // Server side: clients are tokens with the client scope in the server config.
+  const { ConfigStore } = await import("./server/configstore");
+  const { RunsDb } = await import("./server/db");
+  const { isClientSource, parseClientUrl } = await import("./sources");
+  const { join } = await import("node:path");
+  const store = new ConfigStore(String(o.config ?? "/etc/arca/config.json"));
+  const raw = await store.readRaw();
+  const sourcesOf = (name: string) =>
+    Object.entries<any>(raw.sources ?? {}).filter(([, s]) => isClientSource(s.path) && parseClientUrl(s.path).client === name).map(([n]) => n);
+  if (sub === "add") {
+    const name = pos[0];
+    if (!name) throw new Error("client add needs a name");
+    const { randomBytes } = await import("node:crypto");
+    const { hashToken } = await import("./server/http");
+    const token = `arca_${randomBytes(24).toString("base64url")}`;
+    await store.update((r) => {
+      r.tokens ??= [];
+      if (r.tokens.some((t: any) => t.name === name)) throw new Error(`A token named ${name} already exists`);
+      r.tokens.push({ name, sha256: hashToken(token), scopes: ["client"], created: new Date().toISOString() });
+    });
+    const { hostname } = await import("node:os");
+    const listen = raw.listen ?? {};
+    const server = String(o.server ?? `http://${!listen.host || listen.host === "0.0.0.0" || listen.host === "::" ? hostname() : listen.host}:${listen.port ?? 7350}`);
+    out(
+      `Client ${name} added. Its token (shown only once): ${token}\n\n` +
+        `On the machine, install Arca as a client:\n` +
+        `  curl -fsSL https://raw.githubusercontent.com/sanyadez/Arca/main/install.sh | sudo sh -s -- --client --server ${server} --token ${token}\n` +
+        `or, with Arca already installed there:  arca client enroll --server ${server} --token ${token}\n\n` +
+        `Then add its folders as sources with the path client://${name}/<folder>.\n` +
+        `Restart the server to load the new token: systemctl restart arca`,
+      { name, token, server },
+    );
+    return;
+  }
+  if (sub === "list") {
+    const db = new RunsDb(join(raw.dataDir ?? "/var/lib/arca", "runs.sqlite"));
+    const rows = (raw.tokens ?? [])
+      .filter((t: any) => t.scopes?.includes("client"))
+      .map((t: any) => ({ name: t.name, lastSeen: db.getValue<{ at: number; host?: string; version?: string }>(`client:${t.name}`), sources: sourcesOf(t.name) }));
+    db.close();
+    out(
+      rows.length
+        ? rows.map((r: any) => `${r.name}\t${r.lastSeen ? `seen ${new Date(r.lastSeen.at).toISOString()} (${r.lastSeen.host ?? "?"}, ${r.lastSeen.version ?? "?"})` : "never connected"}\t${r.sources.join(", ") || "no sources"}`).join("\n")
+        : "No clients. Add one with: arca client add <name>",
+      rows,
+    );
+    return;
+  }
+  if (sub === "remove") {
+    const name = pos[0];
+    if (!name) throw new Error("client remove needs a name");
+    const used = sourcesOf(name);
+    if (used.length) throw new Error(`Sources use this client: ${used.join(", ")}. Remove or change them first.`);
+    await store.update((r) => {
+      const before = (r.tokens ?? []).length;
+      r.tokens = (r.tokens ?? []).filter((t: any) => !(t.name === name && t.scopes?.includes("client")));
+      if (r.tokens.length === before) throw new Error(`No client named ${name}`);
+    });
+    out(`Client ${name} removed; its token no longer works after a restart of the server (systemctl restart arca).`, { removed: name });
+    return;
+  }
+  throw new Error("Usage: arca client add|list|remove|enroll|run (see arca --help)");
+}
 
 async function main(argv: string[]) {
   const { values: o, positionals: pos } = parseArgs({
@@ -77,6 +169,10 @@ async function main(argv: string[]) {
       "keep-monthly": { type: "string" },
       "keep-yearly": { type: "string" },
       "keep-within-days": { type: "string" },
+      config: { type: "string" },
+      "client-config": { type: "string" },
+      server: { type: "string" },
+      token: { type: "string" },
     },
   });
   if (o.version) {
@@ -97,6 +193,10 @@ async function main(argv: string[]) {
     const token = `arca_${randomBytes(24).toString("base64url")}`;
     const entry = { name: pos[0] ?? "admin", sha256: hashToken(token), scopes: ["admin"] };
     out(`Token (shown only once): ${token}\nAdd to the config, under "tokens":\n${JSON.stringify(entry)}`, { token, entry });
+    return;
+  }
+  if (cmd === "client") {
+    await clientCommand(pos, o, out);
     return;
   }
   if (cmd === "serve") {

@@ -17,12 +17,13 @@ import { loadTree } from "../core/tree";
 import { formatBytes } from "../util";
 import { hostname } from "node:os";
 import { VERSION_STRING } from "../version";
-import { openSource } from "../sources";
+import { isClientSource, openSource, parseClientUrl } from "../sources";
 import { type Config, repoPassword } from "./config";
 import { Cron } from "./cron";
 import { RunsDb, type Run, type RunKind } from "./db";
 import { LiveRun } from "./live";
 import type { ConfigStore } from "./configstore";
+import { ClientHub } from "./clients";
 
 export const DEFAULT_PRUNE = "30 4 * * 0";
 export const DEFAULT_CHECK = "0 5 * * *";
@@ -36,6 +37,7 @@ export class Service {
   private active = new Map<number, LiveRun>();
   private timer: ReturnType<typeof setTimeout> | undefined;
   private crons = new Map<string, Cron>();
+  readonly clients: ClientHub;
 
   constructor(
     readonly cfg: Config,
@@ -45,6 +47,7 @@ export class Service {
     readonly configStore?: ConfigStore,
   ) {
     this.db = db ?? new RunsDb(join(cfg.dataDir, "runs.sqlite"));
+    this.clients = new ClientHub(() => this.cfg, { get: (k) => this.db.getValue(k), set: (k, v) => this.db.setValue(k, v) });
   }
 
   /** Switch to a new config without a restart: open repositories whose address or password changed are reopened. */
@@ -103,7 +106,7 @@ export class Service {
     repo: string,
     source: string | null,
     trigger: string,
-    fn: (r: Repository, ctl: JobControl) => Promise<{
+    fn: (r: Repository, ctl: JobControl, runId: number) => Promise<{
       status?: "ok" | "warning";
       summary: string;
       snapshot?: string;
@@ -126,7 +129,7 @@ export class Service {
         live.setRunning();
         live.addLog("run", `Run #${runId} started by ${trigger}: ${kind}${source ? " " + source : ""} → ${repo}`);
         const r = await this.repo(repo);
-        const res = await fn(r, ctl);
+        const res = await fn(r, ctl, runId);
         live.addLog("run", `Finished: ${res.summary}`);
         this.db.finish(runId, res.status ?? "ok", res.summary, { ...res, details: { ...(res.details as object), log: live.log.slice(-300) } });
         this.log(`${res.status === "warning" ? "WARNING" : "ok"}: ${label}: ${res.summary}`);
@@ -162,22 +165,22 @@ export class Service {
 
   runBackup(sourceName: string, trigger: string) {
     const s = this.source(sourceName);
-    const res = this.enqueue("backup", s.repo, sourceName, trigger, async (repo, ctl) => {
-      await repo.reloadIndex();
-      const from = openSource(s.path, s.ssh);
-      const r = await withLock(repo, false, `backup ${sourceName}`, () =>
-        backup(repo, {
-          from,
-          source: sourceName,
-          exclude: s.exclude,
-          tags: [...(s.tags ?? []), triggerTag(trigger)],
-          owner: s.owner,
-          signal: ctl.signal,
-          onProgress: ctl.progress,
-          onLog: ctl.log,
-        }),
-      ).finally(() => from.close());
-      const st = r.snapshot.stats!;
+    const res = this.enqueue("backup", s.repo, sourceName, trigger, async (repo, ctl, runId) => {
+      const tags = [...(s.tags ?? []), triggerTag(trigger)];
+      let r: { id: string; changed: number; stats: NonNullable<Snapshot["stats"]>; errors: { path: string; error: string }[] };
+      if (isClientSource(s.path)) {
+        // The client chunks, encrypts and writes through the storage proxy; this repository only reads the result.
+        r = await this.clients.backup(sourceName, { runId, kind: "backup", source: sourceName, url: s.path, exclude: s.exclude ?? [], tags, owner: s.owner, repo: s.repo }, ctl);
+        await repo.reloadIndex();
+      } else {
+        await repo.reloadIndex();
+        const from = openSource(s.path, s.ssh);
+        const b = await withLock(repo, false, `backup ${sourceName}`, () =>
+          backup(repo, { from, source: sourceName, exclude: s.exclude, tags, owner: s.owner, signal: ctl.signal, onProgress: ctl.progress, onLog: ctl.log }),
+        ).finally(() => from.close());
+        r = { id: b.id, changed: b.changed, stats: b.snapshot.stats!, errors: b.errors };
+      }
+      const st = r.stats;
       let summary = `+${formatBytes(st.newBytes)}, ${r.changed} file${r.changed === 1 ? "" : "s"} changed · snapshot ${r.id.slice(0, 8)}`;
       let forgotten: string[] = [];
       if (s.retention && !isEmptyPolicy(s.retention)) {
@@ -382,6 +385,7 @@ export class Service {
       runId: st.running?.id ?? null,
       progress: st.running?.progress ?? null,
       tags: s.tags ?? [],
+      client: isClientSource(s.path) ? this.clients.state(parseClientUrl(s.path).client) : null,
       ssh: s.path.startsWith("ssh://") ? { forced: !!s.ssh?.forced, identity: s.ssh?.identity ? true : false, lastConnected: st.good?.finished ?? null } : null,
       repoInfo: { name: s.repo, url: this.cfg.repos[s.repo]?.url ?? "", stats: this.repoStats(s.repo), lastCheck: this.db.list({ kind: "check", repo: s.repo, limit: 1 })[0] ?? null },
       snapshots: snaps,
@@ -623,6 +627,7 @@ export class Service {
     clearTimeout(this.timer);
     for (const a of this.active.values()) a.abort.abort();
     await Promise.allSettled([...this.queues.values()]);
+    await this.clients.close();
     for (const p of this.repos.values()) await (await p.catch(() => null))?.close();
     this.db.close();
   }
