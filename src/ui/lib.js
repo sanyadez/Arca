@@ -213,7 +213,8 @@ export function modal({ title, body, actions = [{ label: "OK", kind: "primary", 
   return new Promise((resolve) => {
     const scrim = document.createElement("div");
     scrim.className = "scrim";
-    scrim.innerHTML = h`<div class="modal" role="dialog" aria-modal="true" aria-label="${title}">
+    const plainTitle = String(title).replace(/<[^>]*>/g, "");
+    scrim.innerHTML = h`<div class="modal" role="dialog" aria-modal="true" aria-label="${plainTitle}">
       <div class="m-head">${title}</div>
       <div class="m-body">${body}</div>
       <div class="m-foot">
@@ -281,3 +282,50 @@ export function copyText(text) {
 export const can = (session, scope) => session.scopes.includes("admin") || session.scopes.includes(scope);
 
 export const adminTag = () => h`<span class="admin-tag">${icon("shield")}admin</span>`;
+
+// ── schedules and file modes ──
+
+const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const pad2 = (n) => String(n).padStart(2, "0");
+
+/** Cron in words for the common shapes; anything else is shown as is. */
+export function cronText(expr) {
+  if (!expr) return "Manual only";
+  const alias = { "@hourly": "0 * * * *", "@daily": "0 0 * * *", "@midnight": "0 0 * * *", "@weekly": "0 0 * * 0", "@monthly": "0 0 1 * *", "@yearly": "0 0 1 1 *", "@annually": "0 0 1 1 *" }[expr.trim()];
+  const [mi, ho, dom, mon, dow] = (alias ?? expr).trim().split(/\s+/);
+  const isNum = (x) => /^\d+$/.test(x ?? "");
+  if (dom === "*" && mon === "*" && dow === "*") {
+    if (isNum(mi) && isNum(ho)) return `Every day at ${pad2(ho)}:${pad2(mi)}`;
+    if (isNum(mi) && ho === "*") return mi === "0" ? "Every hour" : `Every hour at :${pad2(mi)}`;
+    if (isNum(mi) && /^\*\/\d+$/.test(ho)) return `Every ${ho.slice(2)} hours`;
+    if (/^\*\/\d+$/.test(mi) && ho === "*") return `Every ${mi.slice(2)} minutes`;
+  }
+  if (isNum(mi) && isNum(ho) && dom === "*" && mon === "*" && /^[0-7]$/.test(dow)) return `Every ${DAYS[Number(dow) % 7]} at ${pad2(ho)}:${pad2(mi)}`;
+  if (isNum(mi) && isNum(ho) && isNum(dom) && mon === "*" && dow === "*") return `Monthly on day ${dom} at ${pad2(ho)}:${pad2(mi)}`;
+  return expr;
+}
+
+/** 0o755 and a type → "drwxr-xr-x". */
+export function modeString(mode, type) {
+  const t = type === "dir" ? "d" : type === "symlink" ? "l" : "-";
+  let s = "";
+  for (const shift of [6, 3, 0]) {
+    const b = (mode >> shift) & 7;
+    s += (b & 4 ? "r" : "-") + (b & 2 ? "w" : "-") + (b & 1 ? "x" : "-");
+  }
+  return t + s;
+}
+
+/** "2026-10-29 18:47" in local time. */
+export function stamp(ms) {
+  const d = new Date(ms);
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
+
+/** A labelled select that looks like the filter buttons of the design. */
+export const select = (id, label, options, value) =>
+  h`<label class="sel"><span class="muted">${label}</span><select id="${id}">${options.map(([v, l]) => h`<option value="${v}" ${v === value ? raw("selected") : ""}>${l}</option>`)}</select>${icon("chevron-down")}</label>`;
+
+export function escapeRe(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}

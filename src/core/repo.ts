@@ -415,13 +415,24 @@ export class Repository {
     return this.putSealed("snapshots", s);
   }
 
+  /** Snapshot files never change, so decrypted snapshots are kept; only new ones are fetched. */
+  private snapCache = new Map<string, Snapshot>();
+
   async listSnapshots(): Promise<{ id: string; snapshot: Snapshot }[]> {
     const files = await this.backend.list("snapshots");
+    const ids = new Set<string>();
     const out = [];
     for (const f of files) {
       const id = f.name.slice("snapshots/".length);
-      out.push({ id, snapshot: this.openJson<Snapshot>(await this.backend.get(f.name), `snapshot ${id.slice(0, 12)}`) });
+      ids.add(id);
+      let snapshot = this.snapCache.get(id);
+      if (!snapshot) {
+        snapshot = this.openJson<Snapshot>(await this.backend.get(f.name), `snapshot ${id.slice(0, 12)}`);
+        this.snapCache.set(id, snapshot);
+      }
+      out.push({ id, snapshot });
     }
+    for (const id of this.snapCache.keys()) if (!ids.has(id)) this.snapCache.delete(id);
     return out.sort((a, b) => a.snapshot.time.localeCompare(b.snapshot.time));
   }
 
@@ -442,6 +453,7 @@ export class Repository {
 
   async deleteSnapshot(id: string) {
     await this.backend.delete(`snapshots/${id}`);
+    this.snapCache.delete(id);
   }
 
   async close() {

@@ -11,13 +11,20 @@ import * as appJsM from "../ui/app.js" with { type: "text" };
 import * as overviewJsM from "../ui/pages/overview.js" with { type: "text" };
 import * as runsJsM from "../ui/pages/runs.js" with { type: "text" };
 import * as runJsM from "../ui/pages/run.js" with { type: "text" };
+import * as sourcesJsM from "../ui/pages/sources.js" with { type: "text" };
+import * as sourceJsM from "../ui/pages/source.js" with { type: "text" };
+import * as snapshotsJsM from "../ui/pages/snapshots.js" with { type: "text" };
+import * as snapshotJsM from "../ui/pages/snapshot.js" with { type: "text" };
 import { VERSION_STRING } from "../version";
 
 /** A text import as a string (the TS types of .js/.html modules do not know about `type: "text"`). */
 const txt = (m: unknown): string => (m as { default: string }).default;
-const [indexHtml, tokensCss, appCss, iconsJs, libJs, appJs, overviewJs, runsJs, runJs] = [
-  indexHtmlM, tokensCssM, appCssM, iconsJsM, libJsM, appJsM, overviewJsM, runsJsM, runJsM,
-].map(txt) as [string, string, string, string, string, string, string, string, string];
+const [indexHtml, tokensCss, appCss, iconsJs, libJs, appJs] = [indexHtmlM, tokensCssM, appCssM, iconsJsM, libJsM, appJsM].map(txt) as [
+  string, string, string, string, string, string,
+];
+const PAGES: Record<string, unknown> = {
+  overview: overviewJsM, runs: runsJsM, run: runJsM, sources: sourcesJsM, source: sourceJsM, snapshots: snapshotsJsM, snapshot: snapshotJsM,
+};
 
 const ASSETS: Record<string, [string, string]> = {
   "/assets/tokens.css": [tokensCss, "text/css"],
@@ -25,9 +32,7 @@ const ASSETS: Record<string, [string, string]> = {
   "/assets/icons.js": [iconsJs, "text/javascript"],
   "/assets/lib.js": [libJs, "text/javascript"],
   "/assets/app.js": [appJs, "text/javascript"],
-  "/assets/pages/overview.js": [overviewJs, "text/javascript"],
-  "/assets/pages/runs.js": [runsJs, "text/javascript"],
-  "/assets/pages/run.js": [runJs, "text/javascript"],
+  ...Object.fromEntries(Object.entries(PAGES).map(([name, m]) => [`/assets/pages/${name}.js`, [txt(m), "text/javascript"] as [string, string]])),
 };
 
 const ETAG = `"${Bun.hash(VERSION_STRING + Object.values(ASSETS).map((a) => a[0]).join("")).toString(36)}"`;

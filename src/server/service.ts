@@ -10,8 +10,10 @@ import { backup } from "../core/backup";
 import { restore } from "../core/restore";
 import { check, forget, prune } from "../core/maintenance";
 import { withLock } from "../core/lock";
-import { walkTree, type ListedNode } from "../core/tree";
-import { isEmptyPolicy } from "../core/retention";
+import { findNode, walkTree, type ListedNode } from "../core/tree";
+import { isEmptyPolicy, applyRetention } from "../core/retention";
+import { Differ, searchSnapshots } from "../core/diff";
+import { loadTree } from "../core/tree";
 import { formatBytes } from "../util";
 import { hostname } from "node:os";
 import { VERSION_STRING } from "../version";
@@ -148,7 +150,7 @@ export class Service {
           from,
           source: sourceName,
           exclude: s.exclude,
-          tags: s.tags,
+          tags: [...(s.tags ?? []), triggerTag(trigger)],
           owner: s.owner,
           signal: ctl.signal,
           onProgress: ctl.progress,
@@ -209,24 +211,165 @@ export class Service {
     return abs;
   }
 
-  runRestore(repoName: string, snapshotRef: string, o: { path?: string; target?: string }, trigger: string) {
+  runRestore(
+    repoName: string,
+    snapshotRef: string,
+    o: { path?: string; paths?: string[]; target?: string; verify?: boolean; owners?: boolean },
+    trigger: string,
+  ) {
     const target = this.restoreTarget(o.target ?? `${repoName}-${snapshotRef.slice(0, 8)}-${Date.now()}`);
     return this.enqueue("restore", repoName, null, trigger, async (repo, ctl) => {
       await mkdir(this.cfg.restoreRoot, { recursive: true });
       const { id, snapshot } = await repo.findSnapshot(snapshotRef);
       const r = await withLock(repo, false, "restore", () =>
-        restore(repo, snapshot.tree, target, { path: o.path, signal: ctl.signal, onProgress: ctl.progress }),
+        restore(repo, snapshot.tree, target, {
+          path: o.path,
+          paths: o.paths,
+          verify: o.verify,
+          owners: o.owners,
+          signal: ctl.signal,
+          onProgress: ctl.progress,
+        }),
       );
+      ctl.log("restore", `Restored ${r.files} files, ${r.dirs} folders from snapshot ${id.slice(0, 8)} into ${r.target}`);
       return {
         status: r.errors.length ? "warning" : "ok",
-        summary: `restored ${r.files} files (${formatBytes(r.bytes)}) from snapshot ${id.slice(0, 8)} to ${r.target}`,
+        summary: `${r.files} files, ${formatBytes(r.bytes)} to ${r.target}${o.verify ? `, ${r.verified} verified` : ""}${r.errors.length ? ` · ${r.errors.length} errors` : ""}`,
         snapshot: id,
         details: r,
       };
     });
   }
 
+  /** Remove snapshots (admin). Their data is freed by the next prune. */
+  async forgetSnapshots(repoName: string, ids: string[]) {
+    const repo = await this.repo(repoName);
+    const all = await repo.listSnapshots();
+    const full = ids.map((ref) => {
+      const m = all.filter((x) => x.id.startsWith(ref));
+      if (m.length !== 1) throw new HttpError(400, `Snapshot ${ref} not found or ambiguous`);
+      return m[0]!.id;
+    });
+    await withLock(repo, false, "forget", async () => {
+      for (const id of full) await repo.deleteSnapshot(id);
+    });
+    this.log(`forgot ${full.length} snapshot(s) in ${repoName}`);
+    void this.computeRepoStats(repoName).catch(() => {});
+    return { removed: full };
+  }
+
   // ── browsing ──
+
+  /** Snapshots of all (or one) repositories, newest first, with the fields the UI lists. */
+  async allSnapshots(f: { repo?: string; source?: string; host?: string; tag?: string; owner?: string } = {}) {
+    const names = f.repo ? [f.repo] : Object.keys(this.cfg.repos);
+    const out: SnapshotRow[] = [];
+    for (const name of names) {
+      let list: { id: string; snapshot: Snapshot }[];
+      try {
+        list = await (await this.repo(name)).listSnapshots();
+      } catch (e: any) {
+        if (f.repo) throw e;
+        continue; // one unreachable repository must not hide the others
+      }
+      for (const { id, snapshot: s } of list) {
+        if (f.source && s.source !== f.source) continue;
+        if (f.host && s.host !== f.host) continue;
+        if (f.tag && !s.tags.includes(f.tag)) continue;
+        if (f.owner && s.owner !== f.owner) continue;
+        out.push({ repo: name, id, time: s.time, host: s.host, source: s.source, root: s.root, tags: s.tags, parent: s.parent ?? null, stats: s.stats ?? null });
+      }
+    }
+    return out.sort((a, b) => b.time.localeCompare(a.time));
+  }
+
+  async snapshotInfo(repoName: string, ref: string) {
+    const repo = await this.repo(repoName);
+    const { id, snapshot } = await repo.findSnapshot(ref);
+    const parent = snapshot.parent ? (await repo.listSnapshots()).find((x) => x.id === snapshot.parent) : undefined;
+    return {
+      repo: repoName,
+      id,
+      ...snapshot,
+      parentInfo: parent ? { id: parent.id, time: parent.snapshot.time } : null,
+      restoreRoot: this.cfg.restoreRoot,
+    };
+  }
+
+  /** One folder of a snapshot, optionally with new/changed marks against the parent snapshot. */
+  async browse(repoName: string, ref: string, path = "", o: { compare?: boolean; limit?: number; offset?: number } = {}) {
+    const repo = await this.repo(repoName);
+    const { id, snapshot } = await repo.findSnapshot(ref);
+    const node = await findNodeOrThrow(repo, snapshot.tree, path);
+    if (node.type !== "dir") throw new HttpError(400, `Not a folder: ${path}`);
+    const tree = await loadTree(repo, node.subtree!);
+    let marks: Map<string, { change: string | null; added?: number }> | undefined;
+    let comparedWith: { id: string; time: string } | null = null;
+    if (o.compare && snapshot.parent) {
+      const parent = (await repo.listSnapshots()).find((x) => x.id === snapshot.parent);
+      if (parent) {
+        comparedWith = { id: parent.id, time: parent.snapshot.time };
+        const prevNode = await findNodeOrNull(repo, parent.snapshot.tree, path);
+        marks = await new Differ(repo).dir(node.subtree!, prevNode?.type === "dir" ? prevNode.subtree : undefined);
+      }
+    }
+    const offset = o.offset ?? 0;
+    const limit = Math.min(o.limit ?? 500, 5000);
+    // Folders first, then files; both by name.
+    const sorted = [...tree.nodes].sort((a, b) => (a.type === "dir") === (b.type === "dir") ? NAME_ORDER.compare(a.name, b.name) : a.type === "dir" ? -1 : 1);
+    const items = sorted.slice(offset, offset + limit).map(({ content, inode, subtree, ...n }) => ({ ...n, ...(marks?.get(n.name) ?? {}) }));
+    return { snapshot: id, path, total: tree.nodes.length, offset, items, comparedWith };
+  }
+
+  async searchFiles(q: string, f: { repo?: string; source?: string; snapshot?: string; owner?: string; limit?: number }, signal?: AbortSignal) {
+    if (q.trim().length < 2) throw new HttpError(400, "Type at least 2 characters to search");
+    const names = f.repo ? [f.repo] : Object.keys(this.cfg.repos);
+    const hits: (Awaited<ReturnType<typeof searchSnapshots>>["hits"][number] & { repo: string })[] = [];
+    let truncated = false;
+    for (const name of names) {
+      const repo = await this.repo(name);
+      let snaps = await repo.listSnapshots();
+      snaps = snaps.filter((x) => (!f.source || x.snapshot.source === f.source) && (!f.owner || x.snapshot.owner === f.owner) && (!f.snapshot || x.id.startsWith(f.snapshot)));
+      const r = await searchSnapshots(repo, snaps, q.trim(), (f.limit ?? 200) - hits.length, signal);
+      hits.push(...r.hits.map((h) => ({ ...h, repo: name })));
+      if (r.truncated || hits.length >= (f.limit ?? 200)) {
+        truncated = true;
+        break;
+      }
+    }
+    return { hits, truncated };
+  }
+
+  /** Everything the source page shows. */
+  async sourceDetail(name: string) {
+    const s = this.source(name);
+    const info = this.sourcesInfo().find((x) => x.name === name)!;
+    const st = this.sourceState(name);
+    let snaps: SnapshotRow[] = [];
+    try {
+      snaps = await this.allSnapshots({ repo: s.repo, source: name });
+    } catch {
+      // the repository may be unreachable; the page still shows the configuration
+    }
+    let wouldKeep: number | null = null;
+    if (s.retention && !isEmptyPolicy(s.retention) && snaps.length) {
+      wouldKeep = applyRetention(snaps.map((x) => ({ snapshot: { ...x, tree: "", owner: "", v: 1 } as Snapshot })), s.retention).keep.length;
+    }
+    const lastRun = st.last ? this.db.get(st.last.id) : null;
+    return {
+      ...info,
+      status: st.status,
+      runId: st.running?.id ?? null,
+      progress: st.running?.progress ?? null,
+      tags: s.tags ?? [],
+      ssh: s.path.startsWith("ssh://") ? { forced: !!s.ssh?.forced, identity: s.ssh?.identity ? true : false, lastConnected: st.good?.finished ?? null } : null,
+      repoInfo: { name: s.repo, url: this.cfg.repos[s.repo]?.url ?? "", stats: this.repoStats(s.repo), lastCheck: this.db.list({ kind: "check", repo: s.repo, limit: 1 })[0] ?? null },
+      snapshots: snaps,
+      kept: snaps.length,
+      wouldKeep,
+      lastRun: lastRun && { id: lastRun.id, status: lastRun.status, started: lastRun.started, finished: lastRun.finished, trigger: lastRun.trigger, summary: lastRun.summary, errors: lastRun.details?.errors ?? [] },
+    };
+  }
 
   async snapshots(repoName: string, o: { source?: string; owner?: string } = {}) {
     const repo = await this.repo(repoName);
@@ -331,7 +474,7 @@ export class Service {
     const since = new Date(now - 86400_000).toISOString();
     const sources = Object.entries(this.cfg.sources).map(([name, s]) => {
       const st = this.sourceState(name);
-      const goodStats = (st.good?.details as { stats?: { bytes?: number } } | null)?.stats;
+      const goodStats = (st.good?.details as { stats?: { bytes?: number; newBytes?: number } } | null)?.stats;
       return {
         name,
         path: s.path,
@@ -341,6 +484,7 @@ export class Service {
         status: st.status,
         lastBackup: st.good?.finished ?? null,
         size: goodStats?.bytes ?? null,
+        newBytes: goodStats?.newBytes ?? null,
         runs: this.db.recentStatuses("backup", name, 14),
         lastRun: st.last && { id: st.last.id, status: st.last.status, finished: st.last.finished, summary: st.last.summary },
         progress: st.running?.progress ?? null,
@@ -378,7 +522,7 @@ export class Service {
     const protectedBytes = sources.reduce((a, s) => a + (s.size ?? 0), 0);
     const stored = repos.reduce((a, r) => a + (r.stats?.stored ?? 0), 0);
     return {
-      server: { version: VERSION_STRING, host: hostname() },
+      server: { version: VERSION_STRING, host: hostname(), restoreRoot: this.cfg.restoreRoot },
       metrics: {
         sources: {
           total: sources.length,
@@ -461,6 +605,39 @@ export class Service {
     for (const p of this.repos.values()) await (await p.catch(() => null))?.close();
     this.db.close();
   }
+}
+
+export interface SnapshotRow {
+  repo: string;
+  id: string;
+  time: string;
+  host: string;
+  source: string;
+  root: string;
+  tags: string[];
+  parent: string | null;
+  stats: Snapshot["stats"] | null;
+}
+
+/** Natural order for file names: "conf-2" before "conf-10". */
+const NAME_ORDER = new Intl.Collator("en", { numeric: true, sensitivity: "base" });
+
+function triggerTag(trigger: string) {
+  return trigger === "schedule" ? "scheduled" : trigger.startsWith("mcp") ? "mcp" : "manual";
+}
+
+async function findNodeOrNull(repo: Repository, tree: string, path: string) {
+  try {
+    return await findNode(repo, tree, path);
+  } catch {
+    return null;
+  }
+}
+
+async function findNodeOrThrow(repo: Repository, tree: string, path: string) {
+  const n = await findNodeOrNull(repo, tree, path);
+  if (!n) throw new HttpError(404, `Not in this snapshot: ${path}`);
+  return n;
 }
 
 export interface RepoStats {

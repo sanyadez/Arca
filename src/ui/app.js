@@ -21,6 +21,10 @@ const ROUTES = [
   ["", () => import("./pages/overview.js")],
   ["runs", () => import("./pages/runs.js")],
   ["runs/:id", () => import("./pages/run.js")],
+  ["sources", () => import("./pages/sources.js")],
+  ["sources/:name", () => import("./pages/source.js")],
+  ["snapshots", () => import("./pages/snapshots.js")],
+  ["snapshots/:repo/:id", () => import("./pages/snapshot.js")],
 ];
 
 const app = document.getElementById("app");
@@ -85,7 +89,7 @@ function renderShell() {
           <nav class="nav" id="nav-bottom"></nav>
           <div class="user-card">
             <button class="who btn ghost sm" id="user-menu" title="Signed in with the token “${session.name}”">
-              <span class="avatar">${icon("user")}</span><span>${session.name}<span class="muted"> · token</span></span>
+              <span class="avatar">${icon("user")}</span><span>${session.name}</span>
             </button>
             ${themeSwitch()}
           </div>

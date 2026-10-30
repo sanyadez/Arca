@@ -37,6 +37,47 @@ const ROUTES: [string, string, TokenConf["scopes"][number], Handler][] = [
   ["GET", "/api/sources", "read", async (s) => s.sourcesInfo()],
   ["GET", "/api/repos", "read", async (s) => s.reposInfo()],
   ["GET", "/api/overview", "read", async (s) => s.overview()],
+  ["GET", "/api/sources/:name", "read", async (s, p) => s.sourceDetail(p.name!)],
+  [
+    "GET",
+    "/api/snapshots",
+    "read",
+    async (s, _p, _r, w, u) => {
+      const q = (k: string) => u.searchParams.get(k) || undefined;
+      return s.allSnapshots({ repo: q("repo"), source: q("source"), host: q("host"), tag: q("tag"), owner: ownerFilter(w) });
+    },
+  ],
+  [
+    "GET",
+    "/api/search",
+    "read",
+    async (s, _p, r, w, u) => {
+      const q = (k: string) => u.searchParams.get(k) || undefined;
+      return s.searchFiles(q("q") ?? "", { repo: q("repo"), source: q("source"), snapshot: q("snapshot"), owner: ownerFilter(w), limit: Number(q("limit") ?? 200) }, r.signal);
+    },
+  ],
+  ["GET", "/api/repos/:name/snapshots/:id", "read", async (s, p) => s.snapshotInfo(p.name!, p.id!)],
+  [
+    "GET",
+    "/api/repos/:name/snapshots/:id/browse",
+    "read",
+    async (s, p, _r, _w, u) =>
+      s.browse(p.name!, p.id!, u.searchParams.get("path") ?? "", {
+        compare: u.searchParams.get("compare") === "1",
+        limit: Number(u.searchParams.get("limit") ?? 500),
+        offset: Number(u.searchParams.get("offset") ?? 0),
+      }),
+  ],
+  [
+    "POST",
+    "/api/repos/:name/forget",
+    "admin",
+    async (s, p, r) => {
+      const b = await jsonBody(r);
+      if (!Array.isArray(b.ids) || b.ids.length === 0) throw new HttpError(400, "ids: a list of snapshot ids is required");
+      return s.forgetSnapshots(p.name!, b.ids.map(String));
+    },
+  ],
   ["POST", "/api/sources/:name/backup", "backup", async (s, p, _r, w, u) => waitParam(u, s.runBackup(p.name!, by(w)))],
   [
     "GET",
@@ -87,7 +128,8 @@ const ROUTES: [string, string, TokenConf["scopes"][number], Handler][] = [
     "restore",
     async (s, p, r, _w, u) => {
       const b = await jsonBody(r);
-      return waitParam(u, s.runRestore(p.name!, p.id!, { path: b.path, target: b.target }, by(_w)));
+      const paths = Array.isArray(b.paths) ? b.paths.map(String) : undefined;
+      return waitParam(u, s.runRestore(p.name!, p.id!, { path: b.path, paths, target: b.target, verify: !!b.verify, owners: b.owners }, by(_w)));
     },
   ],
   [

@@ -175,3 +175,56 @@ describe("overview and runs", () => {
     expect(rb.summary).toBe("cancelled while queued");
   });
 });
+
+describe("snapshots, browser, search, restore", () => {
+  test("list, browse with change marks, search, multi-path restore with verify, forget", async () => {
+    const root = cfg.sources.docs!.path;
+    await req("POST", "/api/sources/docs/backup?wait=1", { token: ADMIN });
+    await writeFile(join(root, "hello.txt"), "changed for the diff\n");
+    await writeFile(join(root, "docs", "brand-new.txt"), "new file\n");
+    await req("POST", "/api/sources/docs/backup?wait=1", { token: ADMIN });
+
+    const list = await j(await req("GET", "/api/snapshots?source=docs", { token: READER }));
+    expect(list.length).toBeGreaterThanOrEqual(2);
+    const latest = list[0];
+    expect(latest.repo).toBe("main");
+    expect(latest.tags).toContain("manual");
+
+    const top = await j(await req("GET", `/api/repos/main/snapshots/${latest.id}/browse?compare=1`, { token: READER }));
+    const by = (n: string) => top.items.find((i: any) => i.name === n);
+    expect(top.comparedWith.id).toBe(latest.parent);
+    expect(by("hello.txt").change).toBe("changed");
+    expect(by("big.bin").change).toBeNull();
+    expect(by("docs").change).toBe("changed");
+    expect(by("docs").added).toBe("new file\n".length);
+    expect(top.items[0].type).toBe("dir"); // folders first
+    const docs = await j(await req("GET", `/api/repos/main/snapshots/${latest.id}/browse?compare=1&path=docs`, { token: READER }));
+    expect(docs.items.find((i: any) => i.name === "brand-new.txt").change).toBe("new");
+
+    const found = await j(await req("GET", "/api/search?q=brand-new", { token: READER }));
+    expect(found.hits.map((h: any) => h.path)).toEqual(["docs/brand-new.txt"]);
+    expect((await req("GET", "/api/search?q=x", { token: READER })).status).toBe(400);
+
+    const r = await j(
+      await req("POST", `/api/repos/main/snapshots/${latest.id}/restore?wait=1`, {
+        token: ADMIN,
+        body: { paths: ["hello.txt", "docs/brand-new.txt"], target: "multi", verify: true },
+      }),
+    );
+    expect(r.status).toBe("ok");
+    expect(r.summary).toContain("2 verified");
+    const { readFile } = await import("node:fs/promises");
+    expect(await readFile(join(cfg.restoreRoot, "multi", "hello.txt"), "utf8")).toBe("changed for the diff\n");
+    expect(await readFile(join(cfg.restoreRoot, "multi", "docs", "brand-new.txt"), "utf8")).toBe("new file\n");
+
+    const src = await j(await req("GET", "/api/sources/docs", { token: READER }));
+    expect(src.kept).toBe(list.length);
+    expect(src.snapshots[0].id).toBe(latest.id);
+
+    expect((await req("POST", "/api/repos/main/forget", { token: READER, body: { ids: [list.at(-1).id] } })).status).toBe(403);
+    const f = await j(await req("POST", "/api/repos/main/forget", { token: ADMIN, body: { ids: [list.at(-1).id.slice(0, 8)] } }));
+    expect(f.removed).toEqual([list.at(-1).id]);
+    const after = await j(await req("GET", "/api/snapshots?source=docs", { token: READER }));
+    expect(after.length).toBe(list.length - 1);
+  }, 60_000);
+});
