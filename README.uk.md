@@ -74,19 +74,30 @@ MCP-сервер (Streamable HTTP) з інструментами: перелік
 
 ## Встановлення
 
-Реліз — це `arca-<версія>-<ціль>.tar.gz` (бінарники `arca` і `arca-restore`, приклад конфігу, systemd-юніт і
-скрипт примусової команди для SSH), плюс `arca-restore-<версія>-<ціль>` окремим файлом і `SHA256SUMS`.
-Цілі: `linux-x64`, `linux-arm64`. Bun не потрібен.
+На Linux-машині (x86_64 або arm64, glibc), від root:
 
 ```sh
-sha256sum --ignore-missing -c SHA256SUMS
-tar xzf arca-<версія>-linux-x64.tar.gz
-arca-<версія>-linux-x64/arca --version
+curl -fsSL https://raw.githubusercontent.com/sanyadez/Arca/main/install.sh | sudo sh
 ```
 
-Сервер: покладіть конфіг за зразком [config.example.json](config.example.json) у `/etc/arca/config.json`,
-створіть токен `arca token <назва>` (він виведе рядок для конфігу), далі `arca serve /etc/arca/config.json`
-або встановіть `arca.service` (він чекає бінарник у `/opt/arca/current/`).
+Інсталятор завантажує найновіший реліз, звіряє його з `SHA256SUMS`, кладе в `/opt/arca` і додає `arca` та
+`arca-restore` в `/usr/local/bin`. Під час першого встановлення він пише мінімальний `/etc/arca/config.json` з новим
+токеном адміністратора (показує один раз) і запускає systemd-сервіс `arca` на порту 7350. Повторний запуск
+оновлює Arca, а конфіг і дані лишає. Параметри — після `sh -s --`: `--version <тег>`, `--port <число>`,
+`--no-service`, `--uninstall`.
+
+Далі створіть репозиторій і опишіть його разом із теками для бекапу в конфігу
+(див. [config.example.json](config.example.json)) та перезапустіть сервіс:
+
+```sh
+echo 'довгий пароль' > /etc/arca/main.pass && chmod 600 /etc/arca/main.pass
+arca init --repo /mnt/backup/arca --password-file /etc/arca/main.pass
+systemctl restart arca
+```
+
+Вручну: реліз — це `arca-<версія>-<ціль>.tar.gz` (бінарники `arca` і `arca-restore`, приклад конфігу, systemd-юніт
+і скрипт примусової команди для SSH), плюс `arca-restore-<версія>-<ціль>` окремим файлом і `SHA256SUMS`.
+Цілі: `linux-x64`, `linux-arm64`. Bun не потрібен.
 
 ## Команди
 

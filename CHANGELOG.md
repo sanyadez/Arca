@@ -3,10 +3,12 @@
 Versions follow [semver](https://semver.org/). While on 0.x, the storage format and the API may change;
 a format change always bumps `FORMAT_VERSION` and is mentioned here.
 
-## Unreleased (0.1.0)
+## 0.1.0-beta.1 — 2026-10-30
 
-First version. Repository format v1.
+First beta. Repository format v1.
 
+- One-line installer (`install.sh`): downloads and verifies the release, installs it into `/opt/arca`,
+  writes a minimal config with an admin token on the first run, starts the systemd service; updates and uninstalls.
 - Core: directory snapshots with exclusions, content-defined chunk deduplication (FastCDC), zstd,
   AES-256-GCM, a separate password-protected key per repository (scrypt), multiple passwords.
 - Storage: local folder, SFTP (via the system OpenSSH).

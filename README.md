@@ -74,19 +74,30 @@ a web UI, a client for remote machines.
 
 ## Install
 
-A release has `arca-<version>-<target>.tar.gz` — the `arca` and `arca-restore` binaries, an example config, a
-systemd unit and the SSH forced-command script — plus `arca-restore-<version>-<target>` on its own and
-`SHA256SUMS`. Targets: `linux-x64`, `linux-arm64`. Bun is not needed.
+On a Linux machine (x86_64 or arm64, glibc), as root:
 
 ```sh
-sha256sum --ignore-missing -c SHA256SUMS
-tar xzf arca-<version>-linux-x64.tar.gz
-arca-<version>-linux-x64/arca --version
+curl -fsSL https://raw.githubusercontent.com/sanyadez/Arca/main/install.sh | sudo sh
 ```
 
-The server: put a config modelled on [config.example.json](config.example.json) into `/etc/arca/config.json`,
-make a token with `arca token <name>` (it prints the line for the config), then run
-`arca serve /etc/arca/config.json` or install `arca.service` (it expects the binary in `/opt/arca/current/`).
+The installer downloads the newest release, checks it against `SHA256SUMS`, puts it into `/opt/arca` and links
+`arca` and `arca-restore` into `/usr/local/bin`. On the first install it writes a minimal
+`/etc/arca/config.json` with a new admin token (printed once) and starts the `arca` systemd service on port 7350.
+Running it again updates Arca and keeps the config and the data. Options go after `sh -s --`:
+`--version <tag>`, `--port <number>`, `--no-service`, `--uninstall`.
+
+Then create a repository and describe it, with the folders to back up, in the config
+(see [config.example.json](config.example.json)), and restart the service:
+
+```sh
+echo 'a long password' > /etc/arca/main.pass && chmod 600 /etc/arca/main.pass
+arca init --repo /mnt/backup/arca --password-file /etc/arca/main.pass
+systemctl restart arca
+```
+
+Manual install: a release has `arca-<version>-<target>.tar.gz` — the `arca` and `arca-restore` binaries, an
+example config, a systemd unit and the SSH forced-command script — plus `arca-restore-<version>-<target>` on its
+own and `SHA256SUMS`. Targets: `linux-x64`, `linux-arm64`. Bun is not needed.
 
 ## Commands
 
