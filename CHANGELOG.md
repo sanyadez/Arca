@@ -3,6 +3,8 @@
 Versions follow [semver](https://semver.org/). While on 0.x, the storage format and the API may change;
 a format change always bumps `FORMAT_VERSION` and is mentioned here.
 
+## Unreleased
+
 ## 0.1.0-beta.2 — 2026-10-30
 
 - Clients (`arca client`, docs/clients.md): a machine backs up its own folders to the server. Sources
