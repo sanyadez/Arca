@@ -44,6 +44,12 @@ it lists snapshots and restores them, with no server, config or database. It onl
 read-only copy of the repository on a disk works too. Keep a copy of it and of the password away from the
 server. The format is documented in [FORMAT.md](FORMAT.md), so the data can be read even without Arca.
 
+**Is there a web UI?**
+Yes, served by the same binary at the server's address (port 7350 by default). Sign in with a token; the
+browser then keeps a session cookie. It shows what needs attention, live progress of running backups, the
+snapshots with a file browser and restore, and it is where you add repositories and sources (including
+the SSH setup of another machine), manage tokens and keep the recovery kit. It works on a phone too.
+
 **What do agents get?**
 An MCP server (Streamable HTTP) with tools to list sources and snapshots, browse a snapshot, run a backup or
 a check, and restore into a new folder on the server. Access goes by tokens with scopes — read, backup,
@@ -66,11 +72,13 @@ Works now:
 - Restore of a whole snapshot or a part of it into a new folder; existing files are never overwritten.
 - Retention (`forget`), garbage collection (`prune`), integrity checks (`check --read-data`), repository locks.
 - The server: schedules, retention after each backup, scheduled prune and check, run history, HTTP API with tokens.
+- Web UI: overview, sources, snapshots with a file browser and restore, runs with live progress,
+  repositories, tokens, a source wizard with SSH setup, recovery kit; light and dark, desktop and phone.
 - MCP for agents.
 - `arca-restore`: restore without the server.
 
 Planned: S3 and other cloud storage, several storages per source, database dumps, notifications, several users,
-a web UI, a client for remote machines.
+a client for remote machines.
 
 ## Install
 

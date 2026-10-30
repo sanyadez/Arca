@@ -31,6 +31,7 @@ export async function page(el, _params, { session, navigate }) {
           <button class="btn primary" id="backup-all" ${canBackup && o.sources.length ? "" : "disabled"}>${icon("play")}Back up all now</button>
         </div>
       </div>
+      ${phoneBanner(o.attention)}
       <div class="grid metrics">
         ${metric("Sources", num(m.sources.total), [`${m.sources.ok} OK`, m.sources.running && `${m.sources.running} running`, m.sources.issues && `${m.sources.issues} issue${m.sources.issues > 1 ? "s" : ""}`])}
         ${metric("Protected data", bytes(m.protected), [`${bytes(m.stored)} stored`, m.dedup && `dedup ${m.dedup}×`])}
@@ -54,7 +55,8 @@ export async function page(el, _params, { session, navigate }) {
           ${[["ok", "OK"], ["warning", "Warning"], ["error", "Error"], ["interrupted", "Interrupted"], ["running", "Running"]].map(([c, l]) => h`<span><i class="stripe-dot" style="background:var(--${c === "warning" ? "warn" : c === "error" ? "danger" : c === "running" ? "info" : c})"></i>${l}</span>`)}
         </div>
       </div>
-      <div class="card">${sourcesTable(o.sources)}</div>
+      <div class="card hide-phone">${sourcesTable(o.sources)}</div>
+      <div class="card show-phone">${phoneSources(o.sources)}</div>
 
       <div class="two-col">
         <div><h2 class="section">Repositories</h2><div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(280px,1fr))">${o.repos.map(repoCard)}</div></div>
@@ -124,6 +126,27 @@ export async function page(el, _params, { session, navigate }) {
     stopped = true;
     clearTimeout(timer);
   };
+}
+
+const ORDER = { error: 0, warning: 1, running: 2, queued: 3, interrupted: 4, never: 5, ok: 6 };
+
+function phoneBanner(attention) {
+  const src = attention.filter((a) => a.kind === "source");
+  if (!src.length) return "";
+  const e = src.filter((a) => a.status === "error").length;
+  const w = src.length - e;
+  return h`<a class="problem-banner show-phone" href="#/sources/${encodeURIComponent(src[0].name)}" style="${e ? "" : "background:var(--warn-soft)"}">${icon("triangle-alert")}
+    <div class="grow"><b>${[e && `${e} error${e > 1 ? "s" : ""}`, w && `${w} warning${w > 1 ? "s" : ""}`].filter(Boolean).join(" · ")}</b><div class="small ellipsis">${src.map((a) => a.name).join(" · ")}</div></div>${icon("chevron-right")}</a>`;
+}
+
+function phoneSources(sources) {
+  if (!sources.length) return h`<div class="empty-ok">No sources yet.</div>`;
+  const label = { ok: "OK", warning: "Warning", error: "Error", running: "Running", queued: "Queued", interrupted: "Interrupted", never: "Never run" };
+  return [...sources].sort((a, b) => (ORDER[a.status] ?? 9) - (ORDER[b.status] ?? 9)).map((s) => {
+    const pr = s.status === "running" ? progressOf(s.progress) : null;
+    return h`<a class="m-row" href="#/sources/${encodeURIComponent(s.name)}"><span class="dot ${s.status}"></span><span class="grow">${s.name}</span>
+      <span class="small">${label[s.status] ?? s.status}</span><span class="mono small muted" style="width:76px;text-align:right">${pr ? (pr.pct === null ? "…" : `${pr.pct}%`) : s.lastBackup ? rel(s.lastBackup) : "never"}</span>${icon("chevron-right")}</a>`;
+  });
 }
 
 function metric(label, value, notes) {

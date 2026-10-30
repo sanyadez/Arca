@@ -66,7 +66,7 @@ export async function page(el, _params, { navigate }) {
       ${chips("Type", "kind", [["", "All"], ["backup", "Backup"], ["prune", "Prune"], ["check", "Check"], ["restore", "Restore"]])}
       ${chips("Status", "status", [["", "All"], ["error", "Failed", "danger"], ["warning", "Warning", "warn"], ["running", "Running", "info"], ["interrupted", "Interrupted", "interrupted"]], d.statusCounts)}
       ${chips("Trigger", "trigger", [["", "All"], ["schedule", "Schedule"], ["api", "API"], ["mcp", "MCP"]])}`.s;
-    el.querySelector("#table").innerHTML = (d.runs.length ? table(d.runs) : h`<div class="empty-ok">${icon("info")}No runs match these filters in the last ${DAYS} days.</div>`).s +
+    el.querySelector("#table").innerHTML = (d.runs.length ? h`<div class="hide-phone">${table(d.runs)}</div><div class="show-phone" style="padding:0 12px 12px">${phoneRuns(d.runs)}</div>` : h`<div class="empty-ok">${icon("info")}No runs match these filters in the last ${DAYS} days.</div>`).s +
       h`<div class="pager"><span>${num(Math.min(d.total, f.offset + d.runs.length))} of ${num(d.total)} runs in the last ${DAYS} days.</span>
         <div class="btns"><button class="btn secondary" id="prev" ${f.offset === 0 ? "disabled" : ""}>${icon("chevron-left")}Previous</button>
         <button class="btn secondary" id="next" ${f.offset + PAGE >= d.total ? "disabled" : ""}>Next${icon("chevron-right")}</button></div></div>`.s;
@@ -122,6 +122,19 @@ export async function page(el, _params, { navigate }) {
     </div>`;
   }
 
+  function phoneRuns(runs) {
+    let lastDay = "";
+    return runs.map((r) => {
+      const day = dayGroup(r.started);
+      const head = day !== lastDay ? h`<div class="m-day">${day}</div>` : "";
+      lastDay = day;
+      return h`${head}<a class="card m-card" href="#/runs/${r.id}" style="margin-top:8px">
+        <div class="top">${badge(r.status)}<span class="meta">${when(r.started)} · ${duration(runDuration(r))}</span></div>
+        <div class="top"><span class="ttl">${KIND_LABEL[r.kind] ?? r.kind} · ${r.source ?? r.repo}</span>${icon("chevron-right")}</div>
+        ${r.summary ? h`<div class="meta" style="white-space:normal">${r.summary}</div>` : ""}</a>`;
+    });
+  }
+
   function table(runs) {
     return h`<div class="table-wrap"><table class="t">
       <thead><tr><th>Status</th><th>Type</th><th>Target</th><th class="hide-phone">Trigger</th><th>Started</th><th class="right hide-phone">Duration</th><th class="hide-phone">Summary</th></tr></thead>
@@ -141,4 +154,11 @@ export async function page(el, _params, { navigate }) {
     stopped = true;
     clearTimeout(timer);
   };
+}
+
+function dayGroup(iso) {
+  const d = new Date(iso);
+  if (d.toDateString() === new Date().toDateString()) return "Today";
+  if (d.toDateString() === new Date(Date.now() - 86400_000).toDateString()) return "Yesterday";
+  return "Earlier";
 }

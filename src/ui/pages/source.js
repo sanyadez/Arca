@@ -39,10 +39,12 @@ export async function page(el, { name }, { session, navigate }) {
       ${d.status === "running" && d.runId ? h`<div class="notice info" style="margin-bottom:16px">${icon("loader-circle", "spin")}<div>A backup is running now. <a href="#/runs/${d.runId}">Watch it live</a>.</div></div>` : ""}
       <div class="side-grid">
         <div class="stack" style="gap:24px">
-          <div class="card pad">${chartCard(snaps)}</div>
+          <div class="card pad hide-phone">${chartCard(snaps)}</div>
           <div class="card">
             <div class="card-head"><span>Recent snapshots</span><a class="btn ghost" href="#/snapshots?source=${encodeURIComponent(d.name)}">${icon("camera")}All ${num(snaps.length)} snapshots</a></div>
-            ${snaps.length ? snapTable(snaps.slice(0, 8)) : h`<div class="empty-ok">${icon("info")}No snapshots yet.</div>`}
+            ${snaps.length ? h`<div class="hide-phone">${snapTable(snaps.slice(0, 8))}</div><div class="show-phone" style="padding:4px 12px 12px">${snaps.slice(0, 5).map((s) => h`<a class="card m-card" href="#/snapshots/${d.repo}/${s.id}" style="margin-top:8px">
+              <div class="top"><span class="ttl mono">${dayLabel(s.time)} ${clock(s.time)}</span><span class="meta">${s.id.slice(0, 8)} ${icon("chevron-right")}</span></div>
+              <div class="grid3"><div><div class="l">Size</div><div class="v">${bytes(s.stats?.bytes ?? null)}</div></div><div><div class="l">Added</div><div class="v">${bytes(s.stats?.newBytes ?? null, { plus: true })}</div></div><div><div class="l">Errors</div><div class="v">${s.stats?.errors ?? 0}</div></div></div></a>`)}</div>` : h`<div class="empty-ok">${icon("info")}No snapshots yet.</div>`}
           </div>
           ${d.lastRun ? lastRunCard(d.lastRun) : ""}
         </div>

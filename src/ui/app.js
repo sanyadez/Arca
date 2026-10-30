@@ -102,7 +102,7 @@ function renderShell() {
         </div>
       </aside>
       <div class="main-col">
-        <header class="topbar"><span class="logo-mark">${icon("archive")}</span><span class="title" id="topbar-title"></span></header>
+        <header class="topbar"><span class="logo-mark">${icon("archive")}</span><span class="title" id="topbar-title"></span><span class="host">${icon("server")}${session.server.host}</span></header>
         <div id="banner"></div>
         <main class="content"><div class="page" id="page"></div></main>
         <nav class="tabbar" id="tabbar"></nav>

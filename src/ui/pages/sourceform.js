@@ -436,9 +436,10 @@ export async function page(el, params, { session, navigate }) {
       schedule: schedule() || undefined,
       exclude: st.exclude,
       retention: st.retention,
-      ssh: st.type === "ssh" ? { forced: st.forced, identity: key?.identity, sshOptions: ["StrictHostKeyChecking=accept-new"] } : undefined,
+      // a new SSH source uses the server's source key; an edited one keeps its own (the server keeps it)
+      ssh: st.type === "ssh" ? { forced: st.forced, identity: editing ? undefined : key?.identity, sshOptions: ["StrictHostKeyChecking=accept-new"] } : undefined,
     };
-    if (st.type === "ssh" && !key) await loadKey(), (body.ssh.identity = key?.identity);
+    if (st.type === "ssh" && !editing && !key) await loadKey(), (body.ssh.identity = key?.identity);
     try {
       if (editing) await api(`/api/sources/${encodeURIComponent(editing)}`, { method: "PUT", body });
       else await api("/api/sources", { method: "POST", body });

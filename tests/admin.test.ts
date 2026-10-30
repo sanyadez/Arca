@@ -66,6 +66,14 @@ describe("repositories and sources", () => {
     expect(svc.cfg.sources.docs).toBeUndefined();
   }, 60_000);
 
+  test("add exclude appends one pattern and keeps the rest of the source", async () => {
+    await call("POST", "/api/sources", { name: "ex", path: join(dir, "src"), repo: "main", exclude: ["*.log"] });
+    const r = await j(await call("POST", "/api/sources/ex/exclude", { pattern: "/docs/deep" }));
+    expect(r.exclude).toEqual(["*.log", "/docs/deep"]);
+    expect((await onDisk()).sources.ex.exclude).toEqual(["*.log", "/docs/deep"]);
+    await call("DELETE", "/api/sources/ex");
+  });
+
   test("connect an existing repository checks the password", async () => {
     const url = join(dir, "repo");
     expect((await call("POST", "/api/repos", { name: "other", url, password: "wrong password!", create: false })).status).toBe(400);

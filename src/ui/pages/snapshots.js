@@ -18,7 +18,7 @@ export async function page(el, _params, { session, navigate }) {
     </div>
     <div class="toolbar" id="toolbar"></div>
     <div id="results"></div>
-    <div class="card pad" id="chart" style="margin-bottom:16px"></div>
+    <div class="card pad hide-phone" id="chart" style="margin-bottom:16px"></div>
     <div class="card" id="list"></div>
     <div id="more"></div>
     <div id="bulk"></div>`.s;
@@ -92,7 +92,8 @@ export async function page(el, _params, { session, navigate }) {
     const shown = groups.slice(0, days);
     const nShown = shown.reduce((a, g) => a + g.rows.length, 0);
     el.querySelector("#list").innerHTML = (rows.length
-      ? h`<div class="table-wrap"><table class="t">
+      ? h`<div class="show-phone" style="padding:4px 12px 12px">${shown.map((g) => h`<div class="m-day">${dayTitle(g.key)} · ${g.rows.length} snapshot${g.rows.length === 1 ? "" : "s"}</div>${g.rows.map((s) => phoneCard(s))}`)}</div>
+        <div class="table-wrap hide-phone"><table class="t">
         <thead><tr><th class="cb"></th><th>Status</th><th>ID</th><th>Time</th><th>Source</th><th class="hide-phone">Host</th><th class="hide-phone">Tags</th><th class="right hide-phone">Files</th><th class="right">Size</th><th class="right">Added</th><th class="right hide-phone">Duration</th><th></th></tr></thead>
         <tbody>${shown.map((g) => h`<tr class="day-row"><td colspan="12"><b>${dayTitle(g.key)}</b> <span class="muted">${new Date(g.key).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })} · ${g.rows.length} snapshot${g.rows.length === 1 ? "" : "s"}, ${bytes(g.rows.reduce((a, s) => a + (s.stats?.newBytes ?? 0), 0), { plus: true })} added</span></td></tr>
           ${g.rows.map(row)}`)}</tbody></table></div>`
@@ -143,6 +144,14 @@ export async function page(el, _params, { session, navigate }) {
       <td class="num">${bytes(s.stats?.newBytes ?? null, { plus: true })}</td>
       <td class="num hide-phone">${duration(s.stats?.seconds)}</td>
       <td style="width:44px"><button class="btn ghost icon sm" data-menu="${k}" aria-label="Actions">${icon("ellipsis")}</button></td></tr>`;
+  }
+
+  function phoneCard(s) {
+    const errs = s.stats?.errors ?? 0;
+    return h`<a class="card m-card" href="#/snapshots/${s.repo}/${s.id}" style="margin-top:8px">
+      <div class="top"><span class="ttl mono">${clock(s.time)} · ${s.source}</span><span class="meta">${s.id.slice(0, 8)} ${icon("chevron-right")}</span></div>
+      <div class="grid3"><div><div class="l">Size</div><div class="v">${bytes(s.stats?.bytes ?? null)}</div></div><div><div class="l">Added</div><div class="v">${bytes(s.stats?.newBytes ?? null, { plus: true })}</div></div>
+        <div><div class="l">Errors</div><div class="v">${errs ? h`<span style="color:var(--warn)">${icon("triangle-alert")}</span> ${errs}` : "0"}</div></div></div></a>`;
   }
 
   function drawChart(rows) {

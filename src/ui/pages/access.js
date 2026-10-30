@@ -32,7 +32,8 @@ export async function page(el, _params, { session }) {
       <div class="card">
         <div class="card-head"><div>Tokens${tokens ? h`<div class="muted small" style="font-weight:400">${tokens.length} Bearer token${tokens.length === 1 ? "" : "s"}${never ? `, ${never} never used` : ""}</div>` : ""}</div></div>
         ${tokens
-          ? h`<div class="table-wrap"><table class="t"><thead><tr><th>Name</th><th>Scopes</th><th class="hide-phone">Used by</th><th>Last used</th><th class="hide-phone">Created</th><th class="hide-phone">Expires</th><th></th></tr></thead>
+          ? h`<div class="show-phone">${tokens.map((t) => h`<div class="m-row" style="padding:10px 16px"><span class="grow">${t.name}<div class="small muted" style="font-weight:400">${t.scopes.join(" · ")} · ${t.lastUsed ? `used ${rel(t.lastUsed)}` : "never used"}</div></span><button class="btn ghost icon" data-menu="${t.name}" aria-label="Actions">${icon("ellipsis")}</button></div>`)}</div>
+            <div class="table-wrap hide-phone"><table class="t"><thead><tr><th>Name</th><th>Scopes</th><th class="hide-phone">Used by</th><th>Last used</th><th class="hide-phone">Created</th><th class="hide-phone">Expires</th><th></th></tr></thead>
             <tbody>${tokens.map((t) => h`<tr>
               <td class="name">${t.name}${t.name === session.name ? h` <span class="tag">you</span>` : ""}</td>
               <td>${t.scopes.map((s) => (s === "admin" ? h`<span class="admin-tag" style="color:var(--text)">${icon("shield")}admin</span> ` : h`<span class="tag" style="color:var(--text)">${s}</span> `))}</td>

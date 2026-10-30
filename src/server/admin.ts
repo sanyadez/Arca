@@ -86,9 +86,24 @@ export async function updateSource(svc: Service, name: string, b: any) {
   if (!svc.cfg.sources[name]) throw new HttpError(404, `Unknown source: ${name}`);
   const s = sourceFromBody(b);
   await save(svc, (raw) => {
+    // The UI does not see key paths: an edit without one keeps the key the source had.
+    const old = raw.sources[name]?.ssh;
+    if (s.ssh && !s.ssh.identity && old?.identity) s.ssh.identity = old.identity;
     raw.sources[name] = s;
   });
   return { name, ...s };
+}
+
+/** Add one exclude pattern (the "Add exclude" button next to a file that could not be read). */
+export async function addExclude(svc: Service, name: string, pattern: unknown) {
+  if (!svc.cfg.sources[name]) throw new HttpError(404, `Unknown source: ${name}`);
+  if (typeof pattern !== "string" || !pattern.trim()) throw new HttpError(400, "pattern is required");
+  const p = pattern.trim();
+  await save(svc, (raw) => {
+    const s = raw.sources[name];
+    s.exclude = [...new Set([...(s.exclude ?? []), p])];
+  });
+  return { name, exclude: svc.cfg.sources[name]!.exclude };
 }
 
 export async function deleteSource(svc: Service, name: string) {

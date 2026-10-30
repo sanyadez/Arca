@@ -3,6 +3,16 @@
 Versions follow [semver](https://semver.org/). While on 0.x, the storage format and the API may change;
 a format change always bumps `FORMAT_VERSION` and is mentioned here.
 
+## Unreleased
+
+- Web UI in the same binary: sign-in with a token (session cookie), overview, sources, snapshots with a file
+  browser (new/changed against the parent), restore of selected files with verification, runs with live
+  progress (server-sent events), repositories (create, check, prune with a preview), tokens with scopes and
+  expiry, a five-step source wizard with SSH setup, recovery kit, settings; light/dark, desktop and phone.
+- The config file can be changed through the API (admin): atomic write, full validation, applied live.
+- File search across snapshots, forget by id, restore of several paths, prune dry-run, run log and
+  queued status in the history, triggers carry the token name, snapshots are tagged scheduled/manual/mcp.
+
 ## 0.1.0-beta.1 — 2026-10-30
 
 First beta. Repository format v1.

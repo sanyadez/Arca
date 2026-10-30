@@ -57,7 +57,8 @@ export async function page(el, _params, { session, navigate }) {
       .sort((a, b) => (ORDER[a.status] ?? 9) - (ORDER[b.status] ?? 9) || a.name.localeCompare(b.name));
 
     el.querySelector("#list").innerHTML = (shown.length
-      ? h`<div class="table-wrap"><table class="t">
+      ? h`<div class="show-phone">${shown.map((s) => h`<a class="m-row" href="#/sources/${encodeURIComponent(s.name)}"><span class="dot ${s.status}"></span><span class="grow">${s.name}<div class="mono small muted ellipsis" style="font-weight:400">${s.path}</div></span><span class="mono small muted">${s.lastBackup ? rel(s.lastBackup) : "never"}</span>${icon("chevron-right")}</a>`)}</div>
+        <div class="table-wrap hide-phone"><table class="t">
         <thead><tr><th>Status ↓</th><th>Source</th><th class="hide-phone">Repository</th><th class="hide-phone">Schedule</th><th>Last backup</th><th class="hide-phone">Next</th><th class="right hide-phone">Size</th><th></th></tr></thead>
         <tbody>${shown.map(row)}</tbody></table></div>`
       : h`<div class="empty-ok">${icon("info")}${all.length ? "No source matches." : h`No sources yet. <a href="#/sources/new">Add the first one</a>.`}</div>`).s;

@@ -129,10 +129,22 @@ export async function page(el, { id }, { session }) {
     const errs = state.run.details?.errors ?? [];
     $("#errors").innerHTML = errs.length
       ? h`<h2 class="section">Files that could not be read <span class="muted">${errs.length}</span></h2>
-        <div class="card"><div class="table-wrap"><table class="t"><thead><tr><th>Path</th><th>Error</th></tr></thead>
-        <tbody>${errs.map((e) => h`<tr><td class="mono">${e.path || "/"}</td><td class="mono muted">${e.error}</td></tr>`)}</tbody></table></div></div>
+        <div class="card"><div class="table-wrap"><table class="t"><thead><tr><th>Path</th><th>Error</th><th></th></tr></thead>
+        <tbody>${errs.map((e) => h`<tr><td class="mono">${e.path || "/"}</td><td class="mono muted">${e.error}</td>
+          <td class="right">${state.run.source && e.path && can(session, "admin") ? h`<button class="btn secondary sm" data-exclude="${e.path}">${icon("plus")}Add exclude</button>` : ""}</td></tr>`)}</tbody></table></div></div>
         <div class="notice info" style="margin-top:12px">${icon("info")}<div>Files the source user cannot read are skipped, the rest of the snapshot is saved. Give read access to them or exclude them from the source.</div></div>`.s
       : "";
+    $("#errors").querySelectorAll("[data-exclude]").forEach((b) => (b.onclick = async () => {
+      const pattern = `/${b.dataset.exclude}`;
+      try {
+        await api(`/api/sources/${encodeURIComponent(state.run.source)}/exclude`, { method: "POST", body: { pattern } });
+        toast(h`Excluded <span class="mono">${pattern}</span> from ${state.run.source}; the next backup skips it`, "ok");
+        b.disabled = true;
+        b.innerHTML = h`${icon("check")}Excluded`.s;
+      } catch (e) {
+        toastError(e);
+      }
+    }));
   }
 
   function drawLog() {

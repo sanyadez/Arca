@@ -42,6 +42,7 @@ const ROUTES: [string, string, TokenConf["scopes"][number], Handler][] = [
   ["POST", "/api/sources", "admin", async (s, _p, r) => admin.createSource(s, await jsonBody(r))],
   ["PUT", "/api/sources/:name", "admin", async (s, p, r) => admin.updateSource(s, p.name!, await jsonBody(r))],
   ["DELETE", "/api/sources/:name", "admin", async (s, p) => admin.deleteSource(s, p.name!)],
+  ["POST", "/api/sources/:name/exclude", "admin", async (s, p, r) => admin.addExclude(s, p.name!, (await jsonBody(r)).pattern)],
   ["POST", "/api/sources/preview", "admin", async (s, _p, r) => admin.previewSource(s, await jsonBody(r))],
   ["POST", "/api/repos", "admin", async (s, _p, r) => admin.createRepo(s, await jsonBody(r))],
   ["POST", "/api/repos/test", "admin", async (_s, _p, r) => admin.testStorage((await jsonBody(r)).url)],
