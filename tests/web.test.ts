@@ -44,6 +44,9 @@ afterAll(async () => {
   await cleanup();
 });
 
+/** Response body as untyped JSON (tests look into it freely). */
+const j = (r: Response): Promise<any> => r.json();
+
 function req(method: string, path: string, o: { token?: string; cookie?: string; csrf?: boolean; body?: unknown } = {}) {
   const headers: Record<string, string> = {};
   if (o.token) headers.authorization = `Bearer ${o.token}`;
@@ -66,14 +69,14 @@ describe("sessions", () => {
   test("token → cookie, CSRF header for writes, sign out", async () => {
     expect((await req("POST", "/api/session", { body: { token: "nope" } })).status).toBe(401);
     const cookie = await signIn(ADMIN);
-    const me = await (await req("GET", "/api/session", { cookie })).json();
+    const me = await j(await req("GET", "/api/session", { cookie }));
     expect(me).toMatchObject({ name: "admin", via: "session" });
     expect((await req("POST", "/api/sources/docs/backup", { cookie })).status).toBe(403);
     expect((await req("POST", "/api/sources/docs/backup?wait=1", { cookie, csrf: true })).status).toBe(200);
     expect((await req("DELETE", "/api/session", { cookie, csrf: true })).status).toBe(200);
     const after = await req("GET", "/api/session", { cookie });
     expect(after.status).toBe(401);
-    expect((await after.json()).reason).toBe("expired");
+    expect((await j(after)).reason).toBe("expired");
   });
 
   test("a removed token signs its sessions out; sign out everywhere", async () => {
@@ -83,9 +86,9 @@ describe("sessions", () => {
     const saved = cfg.tokens;
     cfg.tokens = saved.filter((t) => t.name !== "reader");
     const gone = await req("GET", "/api/session", { cookie: reader });
-    expect((await gone.json()).reason).toBe("revoked");
+    expect((await j(gone)).reason).toBe("revoked");
     cfg.tokens = saved;
-    const out = await (await req("DELETE", "/api/sessions", { cookie: a, csrf: true })).json();
+    const out = await j(await req("DELETE", "/api/sessions", { cookie: a, csrf: true }));
     expect(out.closed).toBe(2);
     expect((await req("GET", "/api/session", { cookie: b })).status).toBe(401);
   });
@@ -118,7 +121,7 @@ describe("overview and runs", () => {
     await req("POST", "/api/sources/docs/backup?wait=1", { token: ADMIN });
     await req("POST", "/api/sources/broken/backup?wait=1", { token: ADMIN });
     await svc.computeRepoStats("main");
-    const o = await (await req("GET", "/api/overview", { token: READER })).json();
+    const o = await j(await req("GET", "/api/overview", { token: READER }));
     const docs = o.sources.find((s: any) => s.name === "docs");
     expect(docs.status).toBe("ok");
     expect(docs.size).toBeGreaterThan(0);
@@ -132,21 +135,21 @@ describe("overview and runs", () => {
   });
 
   test("filters, counts, trigger names", async () => {
-    const all = await (await req("GET", "/api/runs?days=7", { token: READER })).json();
+    const all = await j(await req("GET", "/api/runs?days=7", { token: READER }));
     expect(all.total).toBeGreaterThan(2);
     expect(all.statusCounts.error).toBeGreaterThanOrEqual(1);
-    const errs = await (await req("GET", "/api/runs?status=error", { token: READER })).json();
+    const errs = await j(await req("GET", "/api/runs?status=error", { token: READER }));
     expect(errs.runs.every((r: any) => r.status === "error")).toBe(true);
-    const api = await (await req("GET", "/api/runs?trigger=api", { token: READER })).json();
+    const api = await j(await req("GET", "/api/runs?trigger=api", { token: READER }));
     expect(api.runs[0].trigger).toMatch(/^api:/);
-    const q = await (await req("GET", "/api/runs?q=broken", { token: READER })).json();
+    const q = await j(await req("GET", "/api/runs?q=broken", { token: READER }));
     expect(q.runs.every((r: any) => r.source === "broken")).toBe(true);
-    const one = await (await req("GET", `/api/runs/${api.runs[0].id}`, { token: READER })).json();
+    const one = await j(await req("GET", `/api/runs/${api.runs[0].id}`, { token: READER }));
     expect(one.log.length).toBeGreaterThan(0);
   });
 
   test("SSE stream of a run: init, log, progress, done", async () => {
-    const started = await (await req("POST", "/api/sources/docs/backup", { token: ADMIN })).json();
+    const started = await j(await req("POST", "/api/sources/docs/backup", { token: ADMIN }));
     const res = await req("GET", `/api/runs/${started.runId}/events`, { token: READER });
     expect(res.headers.get("content-type")).toBe("text/event-stream");
     const text = await res.text(); // the stream ends after "done"
@@ -162,12 +165,12 @@ describe("overview and runs", () => {
   });
 
   test("cancelling a queued run marks it interrupted", async () => {
-    const a = await (await req("POST", "/api/sources/docs/backup", { token: ADMIN })).json();
-    const b = await (await req("POST", "/api/sources/docs/backup", { token: ADMIN })).json();
+    const a = await j(await req("POST", "/api/sources/docs/backup", { token: ADMIN }));
+    const b = await j(await req("POST", "/api/sources/docs/backup", { token: ADMIN }));
     expect(svc.live(b.runId)?.status).toBe("queued");
     await req("POST", `/api/runs/${b.runId}/cancel`, { token: ADMIN });
     while (svc.live(a.runId) || svc.live(b.runId)) await Bun.sleep(20);
-    const rb = await (await req("GET", `/api/runs/${b.runId}`, { token: READER })).json();
+    const rb = await j(await req("GET", `/api/runs/${b.runId}`, { token: READER }));
     expect(rb.status).toBe("interrupted");
     expect(rb.summary).toBe("cancelled while queued");
   });
