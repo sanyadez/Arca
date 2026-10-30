@@ -73,7 +73,7 @@ Works now:
 - Retention (`forget`), garbage collection (`prune`), integrity checks (`check --read-data`), repository locks.
 - The server: schedules, retention after each backup, scheduled prune and check, run history, HTTP API with tokens.
 - Web UI: overview, sources, snapshots with a file browser and restore, runs with live progress,
-  repositories, tokens, a source wizard with SSH setup, recovery kit; light and dark, desktop and phone.
+  repositories, tokens, a source wizard with SSH setup, recovery kit; light and dark, desktop and phone, English and Ukrainian.
 - MCP for agents.
 - `arca-restore`: restore without the server.
 

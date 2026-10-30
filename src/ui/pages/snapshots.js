@@ -1,5 +1,5 @@
 // Snapshots of all repositories: filters, per-day chart, grouping by day, file search, bulk forget.
-import { adminTag, api, bytes, can, clock, duration, h, icon, menu, modal, num, raw, select, stamp, toast, toastError } from "../lib.js";
+import { adminTag, api, bytes, can, clock, duration, esc, h, ht, icon, locale, menu, modal, num, raw, select, stamp, t, tn, toast, toastError } from "../lib.js";
 
 const DAY_PAGE = 7; // days shown at first; "Load older days" adds more
 
@@ -13,8 +13,8 @@ export async function page(el, _params, { session, navigate }) {
 
   el.innerHTML = h`
     <div class="page-head">
-      <div><h1>Snapshots</h1><div class="sub" id="sub">&nbsp;</div></div>
-      <div class="actions"><a class="btn primary" href="#/sources">${icon("play")}Back up now…</a></div>
+      <div><h1>${t("Snapshots")}</h1><div class="sub" id="sub">&nbsp;</div></div>
+      <div class="actions"><a class="btn primary" href="#/sources">${icon("play")}${t("Back up now…")}</a></div>
     </div>
     <div class="toolbar" id="toolbar"></div>
     <div id="results"></div>
@@ -37,21 +37,21 @@ export async function page(el, _params, { session, navigate }) {
   function toolbar() {
     const uniq = (k) => [...new Set(all.flatMap((s) => (Array.isArray(s[k]) ? s[k] : [s[k]])))].sort();
     el.querySelector("#toolbar").innerHTML = h`
-      ${select("f-source", "Source", [["", "All"], ...uniq("source").map((v) => [v, v])], f.source)}
-      ${select("f-repo", "Repository", [["", "All"], ...uniq("repo").map((v) => [v, v])], f.repo)}
-      ${select("f-host", "Host", [["", "All"], ...uniq("host").map((v) => [v, v])], f.host)}
-      ${select("f-tag", "Tag", [["", "Any"], ...uniq("tags").map((v) => [v, v])], f.tag)}
-      <label class="search">${icon("search")}<input class="input" id="find" type="search" placeholder="Find a file in snapshots…" /></label>`.s;
+      ${select("f-source", t("Source"), [["", t("All")], ...uniq("source").map((v) => [v, v])], f.source)}
+      ${select("f-repo", t("Repository"), [["", t("All")], ...uniq("repo").map((v) => [v, v])], f.repo)}
+      ${select("f-host", t("Host"), [["", t("All")], ...uniq("host").map((v) => [v, v])], f.host)}
+      ${select("f-tag", t("Tag"), [["", t("Any")], ...uniq("tags").map((v) => [v, v])], f.tag)}
+      <label class="search">${icon("search")}<input class="input" id="find" type="search" placeholder="${t("Find a file in snapshots…")}" /></label>`.s;
     for (const k of ["source", "repo", "host", "tag"])
       el.querySelector(`#f-${k}`).onchange = (e) => {
         f[k] = e.target.value;
         days = DAY_PAGE;
         draw();
       };
-    let t;
+    let timer;
     el.querySelector("#find").addEventListener("input", (e) => {
-      clearTimeout(t);
-      t = setTimeout(() => search(e.target.value.trim()), 350);
+      clearTimeout(timer);
+      timer = setTimeout(() => search(e.target.value.trim()), 350);
     });
   }
 
@@ -60,19 +60,19 @@ export async function page(el, _params, { session, navigate }) {
     searchCtl?.abort();
     if (q.length < 2) return (box.innerHTML = "");
     searchCtl = new AbortController();
-    box.innerHTML = h`<div class="card" style="margin-bottom:16px"><div class="empty-ok">${icon("loader-circle", "spin")}Searching for “${q}”…</div></div>`.s;
+    box.innerHTML = h`<div class="card" style="margin-bottom:16px"><div class="empty-ok">${icon("loader-circle", "spin")}${t("Searching for “{q}”…", { q })}</div></div>`.s;
     const p = new URLSearchParams({ q });
     if (f.source) p.set("source", f.source);
     if (f.repo) p.set("repo", f.repo);
     try {
       const r = await api(`/api/search?${p}`, { signal: searchCtl.signal });
       box.innerHTML = h`<div class="card hits" style="margin-bottom:16px">
-        <div class="card-head"><span>Files matching “${q}”</span><span class="muted small" style="font-weight:400">${num(r.hits.length)}${r.truncated ? "+" : ""} found · newest first</span></div>
+        <div class="card-head"><span>${t("Files matching “{q}”", { q })}</span><span class="muted small" style="font-weight:400">${t("{count} found · newest first", { count: `${num(r.hits.length)}${r.truncated ? "+" : ""}` })}</span></div>
         ${r.hits.length ? r.hits.map((x) => h`<a class="list-row" href="#/snapshots/${x.repo}/${x.snapshot}?path=${encodeURIComponent(parentOf(x.path))}">
             ${icon(x.type === "dir" ? "folder" : "file")}<span class="grow mono small">${x.path}</span>
-            <span class="muted small hide-phone">${x.source} · ${x.snapshot.slice(0, 8)} · ${stamp(Date.parse(x.time))}${x.alsoIn ? ` · also in ${x.alsoIn} older` : ""}</span>
+            <span class="muted small hide-phone">${x.source} · ${x.snapshot.slice(0, 8)} · ${stamp(Date.parse(x.time))}${x.alsoIn ? ` · ${t("also in {n} older", { n: x.alsoIn })}` : ""}</span>
             <span class="mono small">${x.size !== undefined ? bytes(x.size) : ""}</span></a>`)
-          : h`<div class="empty-ok">${icon("info")}No file or folder name contains “${q}”.</div>`}</div>`.s;
+          : h`<div class="empty-ok">${icon("info")}${t("No file or folder name contains “{q}”.", { q })}</div>`}</div>`.s;
     } catch (e) {
       if (e.name !== "AbortError") box.innerHTML = h`<div class="notice danger" style="margin-bottom:16px">${icon("triangle-alert")}<div>${e.message}</div></div>`.s;
     }
@@ -81,7 +81,8 @@ export async function page(el, _params, { session, navigate }) {
   function draw() {
     const rows = filtered();
     const repos = new Set(all.map((s) => s.repo));
-    el.querySelector("#sub").textContent = `${num(rows.length)}${rows.length !== all.length ? ` of ${num(all.length)}` : ""} in ${repos.size} repositor${repos.size === 1 ? "y" : "ies"}`;
+    const count = rows.length !== all.length ? t("{shown} of {total}", { shown: num(rows.length), total: num(all.length) }) : num(rows.length);
+    el.querySelector("#sub").textContent = tn("{count} in {n} repository", "{count} in {n} repositories", repos.size, { count });
     drawChart(rows);
     const groups = [];
     for (const s of rows) {
@@ -92,15 +93,15 @@ export async function page(el, _params, { session, navigate }) {
     const shown = groups.slice(0, days);
     const nShown = shown.reduce((a, g) => a + g.rows.length, 0);
     el.querySelector("#list").innerHTML = (rows.length
-      ? h`<div class="show-phone" style="padding:4px 12px 12px">${shown.map((g) => h`<div class="m-day">${dayTitle(g.key)} · ${g.rows.length} snapshot${g.rows.length === 1 ? "" : "s"}</div>${g.rows.map((s) => phoneCard(s))}`)}</div>
+      ? h`<div class="show-phone" style="padding:4px 12px 12px">${shown.map((g) => h`<div class="m-day">${dayTitle(g.key)} · ${tn("{n} snapshot", "{n} snapshots", g.rows.length)}</div>${g.rows.map((s) => phoneCard(s))}`)}</div>
         <div class="table-wrap hide-phone"><table class="t">
-        <thead><tr><th class="cb"></th><th>Status</th><th>ID</th><th>Time</th><th>Source</th><th class="hide-phone">Host</th><th class="hide-phone">Tags</th><th class="right hide-phone">Files</th><th class="right">Size</th><th class="right">Added</th><th class="right hide-phone">Duration</th><th></th></tr></thead>
-        <tbody>${shown.map((g) => h`<tr class="day-row"><td colspan="12"><b>${dayTitle(g.key)}</b> <span class="muted">${new Date(g.key).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })} · ${g.rows.length} snapshot${g.rows.length === 1 ? "" : "s"}, ${bytes(g.rows.reduce((a, s) => a + (s.stats?.newBytes ?? 0), 0), { plus: true })} added</span></td></tr>
+        <thead><tr><th class="cb"></th><th>${t("Status")}</th><th>ID</th><th>${t("Time")}</th><th>${t("Source")}</th><th class="hide-phone">${t("Host")}</th><th class="hide-phone">${t("Tags")}</th><th class="right hide-phone">${t("Files")}</th><th class="right">${t("Size")}</th><th class="right">${t("Added")}</th><th class="right hide-phone">${t("Duration")}</th><th></th></tr></thead>
+        <tbody>${shown.map((g) => h`<tr class="day-row"><td colspan="12"><b>${dayTitle(g.key)}</b> <span class="muted">${new Date(g.key).toLocaleDateString(locale, { weekday: "short", month: "short", day: "numeric" })} · ${tn("{n} snapshot, {size} added", "{n} snapshots, {size} added", g.rows.length, { size: bytes(g.rows.reduce((a, s) => a + (s.stats?.newBytes ?? 0), 0), { plus: true }) })}</span></td></tr>
           ${g.rows.map(row)}`)}</tbody></table></div>`
-      : h`<div class="empty-ok">${icon("info")}${all.length ? "No snapshot matches these filters." : "No snapshots yet: they appear after the first backup."}</div>`).s;
+      : h`<div class="empty-ok">${icon("info")}${all.length ? t("No snapshot matches these filters.") : t("No snapshots yet: they appear after the first backup.")}</div>`).s;
     el.querySelector("#more").innerHTML = rows.length
-      ? h`<div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px"><span class="mono small muted">${num(nShown)} of ${num(rows.length)}</span>
-        ${shown.length < groups.length ? h`<button class="btn secondary" id="older">${icon("chevron-down")}Load older days</button>` : ""}</div>`.s
+      ? h`<div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px"><span class="mono small muted">${t("{shown} of {total}", { shown: num(nShown), total: num(rows.length) })}</span>
+        ${shown.length < groups.length ? h`<button class="btn secondary" id="older">${icon("chevron-down")}${t("Load older days")}</button>` : ""}</div>`.s
       : "";
     el.querySelector("#older")?.addEventListener("click", () => ((days += DAY_PAGE), draw()));
     el.querySelectorAll("tr[data-k]").forEach((r) => (r.onclick = (e) => {
@@ -117,9 +118,9 @@ export async function page(el, _params, { session, navigate }) {
     el.querySelectorAll("[data-menu]").forEach((b) => (b.onclick = () => {
       const s = byKey(b.dataset.menu);
       menu(b, [
-        { label: "Browse files", icon: "folder-search", onClick: () => navigate(`snapshots/${s.repo}/${s.id}`) },
-        { label: "Restore…", icon: "history", onClick: () => navigate(`snapshots/${s.repo}/${s.id}?restore=all`) },
-        ...(can(session, "admin") ? ["-", { label: "Forget…", icon: "x", danger: true, onClick: () => forget([s]) }] : []),
+        { label: t("Browse files"), icon: "folder-search", onClick: () => navigate(`snapshots/${s.repo}/${s.id}`) },
+        { label: t("Restore…"), icon: "history", onClick: () => navigate(`snapshots/${s.repo}/${s.id}?restore=all`) },
+        ...(can(session, "admin") ? ["-", { label: t("Forget…"), icon: "x", danger: true, onClick: () => forget([s]) }] : []),
       ]);
     }));
     drawBulk();
@@ -132,26 +133,26 @@ export async function page(el, _params, { session, navigate }) {
     const errs = s.stats?.errors ?? 0;
     const k = key(s);
     return h`<tr class="click ${selected.has(k) ? "sel" : ""}" data-k="${k}">
-      <td class="cb"><input type="checkbox" class="cbx" data-sel="${k}" ${selected.has(k) ? raw("checked") : ""} aria-label="Select ${s.id.slice(0, 8)}" /></td>
-      <td>${errs ? h`<span class="badge warning"><span class="dot"></span>${errs} error${errs === 1 ? "" : "s"}</span>` : h`<span class="badge ok"><span class="dot"></span>OK</span>`}</td>
+      <td class="cb"><input type="checkbox" class="cbx" data-sel="${k}" ${selected.has(k) ? raw("checked") : ""} aria-label="${t("Select {id}", { id: s.id.slice(0, 8) })}" /></td>
+      <td>${errs ? h`<span class="badge warning"><span class="dot"></span>${tn("{n} error", "{n} errors", errs)}</span>` : h`<span class="badge ok"><span class="dot"></span>${t("OK")}</span>`}</td>
       <td class="mono">${s.id.slice(0, 8)}</td>
-      <td class="mono" title="${new Date(s.time).toLocaleString()}">${clock(s.time)}</td>
+      <td class="mono" title="${new Date(s.time).toLocaleString(locale)}">${clock(s.time)}</td>
       <td class="name">${s.source}</td>
       <td class="mono muted hide-phone">${s.host}</td>
-      <td class="hide-phone">${s.tags.map((t) => h`<span class="tag">${t}</span> `)}</td>
+      <td class="hide-phone">${s.tags.map((tag) => h`<span class="tag">${tag}</span> `)}</td>
       <td class="num hide-phone">${num(s.stats?.files)}</td>
       <td class="num">${bytes(s.stats?.bytes ?? null)}</td>
       <td class="num">${bytes(s.stats?.newBytes ?? null, { plus: true })}</td>
       <td class="num hide-phone">${duration(s.stats?.seconds)}</td>
-      <td style="width:44px"><button class="btn ghost icon sm" data-menu="${k}" aria-label="Actions">${icon("ellipsis")}</button></td></tr>`;
+      <td style="width:44px"><button class="btn ghost icon sm" data-menu="${k}" aria-label="${t("Actions")}">${icon("ellipsis")}</button></td></tr>`;
   }
 
   function phoneCard(s) {
     const errs = s.stats?.errors ?? 0;
     return h`<a class="card m-card" href="#/snapshots/${s.repo}/${s.id}" style="margin-top:8px">
       <div class="top"><span class="ttl mono">${clock(s.time)} · ${s.source}</span><span class="meta">${s.id.slice(0, 8)} ${icon("chevron-right")}</span></div>
-      <div class="grid3"><div><div class="l">Size</div><div class="v">${bytes(s.stats?.bytes ?? null)}</div></div><div><div class="l">Added</div><div class="v">${bytes(s.stats?.newBytes ?? null, { plus: true })}</div></div>
-        <div><div class="l">Errors</div><div class="v">${errs ? h`<span style="color:var(--warn)">${icon("triangle-alert")}</span> ${errs}` : "0"}</div></div></div></a>`;
+      <div class="grid3"><div><div class="l">${t("Size")}</div><div class="v">${bytes(s.stats?.bytes ?? null)}</div></div><div><div class="l">${t("Added")}</div><div class="v">${bytes(s.stats?.newBytes ?? null, { plus: true })}</div></div>
+        <div><div class="l">${t("Errors")}</div><div class="v">${errs ? h`<span style="color:var(--warn)">${icon("triangle-alert")}</span> ${errs}` : "0"}</div></div></div></a>`;
   }
 
   function drawChart(rows) {
@@ -166,24 +167,24 @@ export async function page(el, _params, { session, navigate }) {
     }
     const max = Math.max(1, ...buckets.map((b) => b.ok + b.err));
     const W = 1100, H = 150, B = 120, bw = W / N;
-    let svg = `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Snapshots per day">`;
+    let svg = `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(t("Snapshots per day"))}">`;
     buckets.forEach((b, i) => {
       const x = i * bw + 3;
       const tot = b.ok + b.err;
       svg += `<rect x="${x}" y="${B - 1}" width="${bw - 6}" height="2" fill="var(--border)"/>`;
       if (!tot) return;
       const hOk = (b.ok / max) * (B - 24), hErr = (b.err / max) * (B - 24);
-      svg += `<rect class="barr" x="${x}" y="${B - hOk}" width="${bw - 6}" height="${hOk}" rx="2"><title>${tot} snapshot(s)</title></rect>`;
+      svg += `<rect class="barr" x="${x}" y="${B - hOk}" width="${bw - 6}" height="${hOk}" rx="2"><title>${esc(tn("{n} snapshot", "{n} snapshots", tot))}</title></rect>`;
       if (b.err) svg += `<rect class="barr err" x="${x}" y="${B - hOk - hErr}" width="${bw - 6}" height="${hErr}" rx="2"/>`;
       svg += `<text x="${x + (bw - 6) / 2}" y="${B - hOk - hErr - 6}" text-anchor="middle" style="fill:var(--text)">${tot}</text>`;
     });
     for (let i = 0; i < N; i += 7) {
       const d = new Date(start.getTime() + i * 86400_000);
-      svg += `<text x="${i * bw + 3}" y="${H - 6}">${d.toLocaleDateString(undefined, { month: "short", day: "numeric" })}</text>`;
+      svg += `<text x="${i * bw + 3}" y="${H - 6}">${d.toLocaleDateString(locale, { month: "short", day: "numeric" })}</text>`;
     }
-    el.querySelector("#chart").innerHTML = h`<div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap"><div><h3 style="margin:0">Snapshots per day, last 5 weeks</h3>
-      <div class="muted small" style="margin-top:4px">Older days thin out under each source's retention.</div></div>
-      <div class="legend"><span><i style="background:var(--accent)"></i>Snapshots</span><span><i style="background:var(--warn)"></i>With read errors</span></div></div>${raw(svg + "</svg>")}`.s;
+    el.querySelector("#chart").innerHTML = h`<div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap"><div><h3 style="margin:0">${t("Snapshots per day, last 5 weeks")}</h3>
+      <div class="muted small" style="margin-top:4px">${t("Older days thin out under each source's retention.")}</div></div>
+      <div class="legend"><span><i style="background:var(--accent)"></i>${t("Snapshots")}</span><span><i style="background:var(--warn)"></i>${t("With read errors")}</span></div></div>${raw(svg + "</svg>")}`.s;
     el.querySelectorAll("#chart .legend i").forEach((i) => Object.assign(i.style, { width: "8px", height: "8px", borderRadius: "2px", display: "inline-block" }));
   }
 
@@ -192,11 +193,11 @@ export async function page(el, _params, { session, navigate }) {
     if (!selected.size) return (box.innerHTML = "");
     const list = [...selected.values()];
     const isAdmin = can(session, "admin");
-    box.innerHTML = h`<div class="bulkbar"><b>${list.length} selected</b>
+    box.innerHTML = h`<div class="bulkbar"><b>${tn("{n} selected", "{n} selected", list.length)}</b>
       <span class="mono small muted">${list.length === 1 ? `${list[0].id.slice(0, 8)} ${list[0].source}, ${bytes(list[0].stats?.bytes ?? null)}` : bytes(list.reduce((a, s) => a + (s.stats?.bytes ?? 0), 0))}</span>
-      <span class="grow"></span><span class="muted small hide-phone">Forget frees space at the next prune</span>
-      <button class="btn ghost" id="clear">${icon("x")}Clear</button>
-      <button class="btn danger" id="forget" ${isAdmin ? "" : "disabled"}>${icon("x")}Forget…</button>${isAdmin ? "" : adminTag()}</div>`.s;
+      <span class="grow"></span><span class="muted small hide-phone">${t("Forget frees space at the next prune")}</span>
+      <button class="btn ghost" id="clear">${icon("x")}${t("Clear")}</button>
+      <button class="btn danger" id="forget" ${isAdmin ? "" : "disabled"}>${icon("x")}${t("Forget…")}</button>${isAdmin ? "" : adminTag()}</div>`.s;
     box.querySelector("#clear").onclick = () => {
       selected.clear();
       draw();
@@ -206,11 +207,11 @@ export async function page(el, _params, { session, navigate }) {
 
   async function forget(list) {
     const ok = await modal({
-      title: `Forget ${list.length} snapshot${list.length === 1 ? "" : "s"}?`,
-      body: h`<div class="notice warn">${icon("triangle-alert")}<div>Forgotten snapshots cannot be restored. Their data is freed at the next prune of the repository; files still used by other snapshots stay.</div></div>
+      title: tn("Forget {n} snapshot?", "Forget {n} snapshots?", list.length),
+      body: h`<div class="notice warn">${icon("triangle-alert")}<div>${t("Forgotten snapshots cannot be restored. Their data is freed at the next prune of the repository; files still used by other snapshots stay.")}</div></div>
         <div class="what-list">${list.map((s) => h`<div><span>${s.id.slice(0, 8)} · ${s.source} · ${stamp(Date.parse(s.time))}</span><span>${s.repo}</span></div>`)}</div>
-        <div class="field"><label for="confirm-word">Type <b class="mono">forget</b> to confirm</label><input class="input mono" id="confirm-word" autocomplete="off" /></div>`,
-      actions: [{ label: "Forget", kind: "danger", value: true }],
+        <div class="field"><label for="confirm-word">${ht("Type {word} to confirm", { word: h`<b class="mono">forget</b>` })}</label><input class="input mono" id="confirm-word" autocomplete="off" /></div>`,
+      actions: [{ label: t("Forget snapshots"), kind: "danger", value: true }],
       onMount: (m) => {
         const btn = m.querySelector(".m-foot .btn.danger");
         btn.disabled = true;
@@ -224,7 +225,7 @@ export async function page(el, _params, { session, navigate }) {
     try {
       let n = 0;
       for (const [repo, ids] of byRepo) n += (await api(`/api/repos/${encodeURIComponent(repo)}/forget`, { method: "POST", body: { ids } })).removed.length;
-      toast(`${n} snapshot${n === 1 ? "" : "s"} forgotten`, "ok");
+      toast(tn("{n} snapshot forgotten", "{n} snapshots forgotten", n), "ok");
       for (const s of list) selected.delete(key(s));
       all = await api("/api/snapshots");
       draw();
@@ -239,9 +240,9 @@ export async function page(el, _params, { session, navigate }) {
 
 function dayTitle(k) {
   const d = new Date(k);
-  if (d.toDateString() === new Date().toDateString()) return "Today";
-  if (d.toDateString() === new Date(Date.now() - 86400_000).toDateString()) return "Yesterday";
-  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  if (d.toDateString() === new Date().toDateString()) return t("Today");
+  if (d.toDateString() === new Date(Date.now() - 86400_000).toDateString()) return t("Yesterday");
+  return d.toLocaleDateString(locale, { month: "short", day: "numeric" });
 }
 
 function parentOf(p) {

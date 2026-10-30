@@ -1,4 +1,5 @@
-// Shared helpers of the web UI: HTML templating with escaping, formatting, API calls, toasts, modals, menus.
+// Shared helpers of the web UI: HTML templating with escaping, translations, formatting, API calls, toasts, modals, menus.
+import { UK } from "./uk.js";
 
 // ── HTML ──
 
@@ -31,6 +32,60 @@ export function h(strings, ...values) {
   return new Raw(out);
 }
 
+// ── languages ──
+//
+// The English text is the key: t("Sources") → "Джерела". Placeholders are {name}. Every key must be a string
+// literal at the call site (tests/i18n.test.ts checks that each one has a Ukrainian translation).
+
+export const LANGS = [
+  ["en", "English"],
+  ["uk", "Українська"],
+];
+const LANG_KEY = "arca-lang";
+const DICTS = { uk: UK };
+
+function pickLang() {
+  const saved = localStorage.getItem(LANG_KEY);
+  if (LANGS.some(([c]) => c === saved)) return saved;
+  return (navigator.languages ?? [navigator.language]).some((l) => /^uk\b/i.test(l ?? "")) ? "uk" : "en";
+}
+
+export const lang = pickLang();
+/** The locale for dates and times; English keeps the browser's English variant (en-GB, en-US…). */
+export const locale = lang === "uk" ? "uk-UA" : /^en\b/i.test(navigator.language ?? "") ? navigator.language : "en-GB";
+document.documentElement.lang = lang;
+
+export function setLang(code) {
+  localStorage.setItem(LANG_KEY, code);
+  location.reload();
+}
+
+const fill = (s, params) => (params ? s.replace(/\{(\w+)\}/g, (m, k) => (k in params ? String(params[k]) : m)) : s);
+
+/** Translated plain text. */
+export const t = (s, params) => fill(DICTS[lang]?.[s] ?? s, params);
+
+/** Translated text as HTML: the text is escaped, raw()/h`` params are kept as they are. */
+export function ht(s, params) {
+  const tpl = DICTS[lang]?.[s] ?? s;
+  return new Raw(tpl.split(/(\{\w+\})/).map((p) => {
+    const k = /^\{(\w+)\}$/.exec(p)?.[1];
+    return k && params && k in params ? part(params[k]) : esc(p);
+  }).join(""));
+}
+
+const PLURAL = new Intl.PluralRules(lang);
+/**
+ * A count with the noun in the right form: tn("{n} source", "{n} sources", 3) → "3 sources" / "3 джерела".
+ * The Ukrainian entry of the plural key is [one, few, many].
+ */
+export function tn(one, other, n, params) {
+  const forms = DICTS[lang]?.[other];
+  const cat = PLURAL.select(n);
+  const s = Array.isArray(forms) ? forms[cat === "one" ? 0 : cat === "few" ? 1 : cat === "many" ? 2 : 1] : n === 1 ? one : other;
+  return fill(s, { n: num(n), ...params });
+}
+
 export const icon = (name, cls = "") => raw(`<svg class="i ${cls}" aria-hidden="true"><use href="#i-${name}"/></svg>`);
 
 // ── formatting ──
@@ -47,8 +102,8 @@ export function num(n) {
 export function bytes(n, { plus = false } = {}) {
   if (n === null || n === undefined) return "—";
   const sign = plus && n > 0 ? "+" : "";
-  if (Math.abs(n) < 1024) return `${sign}${n} B`;
-  const units = ["KiB", "MiB", "GiB", "TiB", "PiB"];
+  if (Math.abs(n) < 1024) return `${sign}${n} ${t("B")}`;
+  const units = [t("KiB"), t("MiB"), t("GiB"), t("TiB"), t("PiB")];
   let v = Math.abs(n) / 1024;
   let i = 0;
   while (v >= 1024 && i < units.length - 1) {
@@ -56,8 +111,8 @@ export function bytes(n, { plus = false } = {}) {
     i++;
   }
   const s = v >= 100 ? Math.round(v).toString() : v >= 10 ? v.toFixed(1) : v.toFixed(2);
-  const t = s.includes(".") ? s.replace(/0+$/, "").replace(/\.$/, "") : s;
-  return `${sign}${n < 0 ? "-" : ""}${t} ${units[i]}`;
+  const trimmed = s.includes(".") ? s.replace(/0+$/, "").replace(/\.$/, "") : s;
+  return `${sign}${n < 0 ? "-" : ""}${lang === "uk" ? trimmed.replace(".", ",") : trimmed} ${units[i]}`;
 }
 
 /** Relative time: "14 min ago", "in 18 h", "3 d ago". */
@@ -66,16 +121,16 @@ export function rel(iso, now = Date.now()) {
   const d = (Date.parse(iso) - now) / 1000;
   const a = Math.abs(d);
   let s;
-  if (a < 45) return d < 0 ? "just now" : "in a moment";
-  if (a < 3600) s = `${Math.round(a / 60)} min`;
-  else if (a < 86400) s = `${Math.round(a / 3600)} h`;
-  else if (a < 86400 * 60) s = `${Math.round(a / 86400)} d`;
-  else return new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
-  return d < 0 ? `${s} ago` : `in ${s}`;
+  if (a < 45) return d < 0 ? t("just now") : t("in a moment");
+  if (a < 3600) s = t("{n} min", { n: Math.round(a / 60) });
+  else if (a < 86400) s = t("{n} h", { n: Math.round(a / 3600) });
+  else if (a < 86400 * 60) s = t("{n} d", { n: Math.round(a / 86400) });
+  else return new Date(iso).toLocaleDateString(locale, { day: "numeric", month: "short", year: "numeric" });
+  return d < 0 ? t("{time} ago", { time: s }) : t("in {time}", { time: s });
 }
 
 /** Exact local time for a title attribute. */
-export const exact = (iso) => (iso ? new Date(iso).toLocaleString() : "");
+export const exact = (iso) => (iso ? new Date(iso).toLocaleString(locale) : "");
 
 /** Relative time in a <time> with the exact time on hover. */
 export const when = (iso) => h`<time datetime="${iso ?? ""}" title="${exact(iso)}">${rel(iso)}</time>`;
@@ -84,9 +139,9 @@ export const when = (iso) => h`<time datetime="${iso ?? ""}" title="${exact(iso)
 export function duration(sec) {
   if (sec === null || sec === undefined || Number.isNaN(sec)) return "—";
   sec = Math.max(0, Math.round(sec));
-  if (sec < 60) return `${sec}s`;
-  if (sec < 3600) return `${Math.floor(sec / 60)}m ${String(sec % 60).padStart(2, "0")}s`;
-  return `${Math.floor(sec / 3600)}h ${String(Math.floor((sec % 3600) / 60)).padStart(2, "0")}m`;
+  if (sec < 60) return t("{s}s", { s: sec });
+  if (sec < 3600) return t("{m}m {s}s", { m: Math.floor(sec / 60), s: String(sec % 60).padStart(2, "0") });
+  return t("{h}h {m}m", { h: Math.floor(sec / 3600), m: String(Math.floor((sec % 3600) / 60)).padStart(2, "0") });
 }
 
 export function runDuration(run, now = Date.now()) {
@@ -94,14 +149,14 @@ export function runDuration(run, now = Date.now()) {
   return ((run.finished ? Date.parse(run.finished) : now) - Date.parse(run.started)) / 1000;
 }
 
-export const clock = (iso) => (iso ? new Date(iso).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", hour12: false }) : "");
+export const clock = (iso) => (iso ? new Date(iso).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit", hour12: false }) : "");
 
 /** "api:admin-laptop" → "api: admin-laptop". */
 export const trigger = (t) => (t ? t.replace(/^(api|mcp):/, "$1: ") : "");
 
 // ── status badges ──
 
-const LABELS = { ok: "OK", warning: "Warning", error: "Error", running: "Running", queued: "Queued", interrupted: "Interrupted", never: "Never run" };
+const LABELS = { ok: t("OK"), warning: t("Warning"), error: t("Error"), running: t("Running"), queued: t("Queued"), interrupted: t("Interrupted"), never: t("Never run") };
 
 export function badge(status) {
   const s = status in LABELS ? status : "never";
@@ -111,9 +166,9 @@ export function badge(status) {
 }
 
 export const stripe = (statuses, n = 14) =>
-  h`<span class="stripe" aria-label="Last ${n} runs">${Array.from({ length: n }, (_, i) => {
+  h`<span class="stripe" aria-label="${t("Last {n} runs", { n })}">${Array.from({ length: n }, (_, i) => {
     const s = statuses[statuses.length - n + i];
-    return h`<i class="${s ?? ""}" title="${s ? LABELS[s] ?? s : "no run"}"></i>`;
+    return h`<i class="${s ?? ""}" title="${s ? LABELS[s] ?? s : t("no run")}"></i>`;
   })}</span>`;
 
 /** A source path: ssh sources show the host and then the path. */
@@ -156,7 +211,7 @@ export async function api(path, { method = "GET", body, signal } = {}) {
   } catch (e) {
     if (e.name === "AbortError") throw e;
     setOffline(true);
-    throw new ApiError(0, "Lost connection to the server");
+    throw new ApiError(0, t("Lost connection to the server"));
   }
   setOffline(false);
   const data = await res.json().catch(() => ({}));
@@ -184,7 +239,7 @@ export function toast(message, kind = "info") {
   const el = document.createElement("div");
   el.className = `toast ${kind}`;
   el.innerHTML = h`${icon(kind === "ok" ? "check" : kind === "error" ? "triangle-alert" : "info")}<div class="grow">${message}</div>
-    <button class="btn ghost icon sm" aria-label="Dismiss">${icon("x")}</button>`.s;
+    <button class="btn ghost icon sm" aria-label="${t("Dismiss")}">${icon("x")}</button>`.s;
   const box = toastsEl();
   while (box.children.length >= 3) box.firstElementChild.remove();
   box.append(el);
@@ -209,7 +264,7 @@ export const toastError = (e) => toast(e?.message ?? String(e), "error");
  * Show a modal. `body` is h`` content; `actions` — [{label, kind, value}] from left to right.
  * Resolves with the value of the pressed action, or null on Cancel/Escape.
  */
-export function modal({ title, body, actions = [{ label: "OK", kind: "primary", value: true }], onMount }) {
+export function modal({ title, body, actions = [{ label: t("OK"), kind: "primary", value: true }], onMount }) {
   return new Promise((resolve) => {
     const scrim = document.createElement("div");
     scrim.className = "scrim";
@@ -218,7 +273,7 @@ export function modal({ title, body, actions = [{ label: "OK", kind: "primary", 
       <div class="m-head">${title}</div>
       <div class="m-body">${body}</div>
       <div class="m-foot">
-        <button class="btn secondary" data-v="__cancel">Cancel</button>
+        <button class="btn secondary" data-v="__cancel">${t("Cancel")}</button>
         ${actions.map((a, i) => h`<button class="btn ${a.kind ?? "primary"}" data-i="${i}">${a.icon ? icon(a.icon) : ""}${a.label}</button>`)}
       </div></div>`.s;
     const done = (v) => {
@@ -275,8 +330,8 @@ export function menu(anchor, items) {
 export function copyText(text) {
   return navigator.clipboard
     .writeText(text)
-    .then(() => toast("Copied", "ok"))
-    .catch(() => toast("Could not copy: the browser blocked the clipboard", "error"));
+    .then(() => toast(t("Copied"), "ok"))
+    .catch(() => toast(t("Could not copy: the browser blocked the clipboard"), "error"));
 }
 
 export const can = (session, scope) => session.scopes.includes("admin") || session.scopes.includes(scope);
@@ -285,23 +340,31 @@ export const adminTag = () => h`<span class="admin-tag">${icon("shield")}admin</
 
 // ── schedules and file modes ──
 
-const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const WEEKLY = [
+  (time) => t("Every Sunday at {time}", { time }),
+  (time) => t("Every Monday at {time}", { time }),
+  (time) => t("Every Tuesday at {time}", { time }),
+  (time) => t("Every Wednesday at {time}", { time }),
+  (time) => t("Every Thursday at {time}", { time }),
+  (time) => t("Every Friday at {time}", { time }),
+  (time) => t("Every Saturday at {time}", { time }),
+];
 const pad2 = (n) => String(n).padStart(2, "0");
 
 /** Cron in words for the common shapes; anything else is shown as is. */
 export function cronText(expr) {
-  if (!expr) return "Manual only";
+  if (!expr) return t("Manual only");
   const alias = { "@hourly": "0 * * * *", "@daily": "0 0 * * *", "@midnight": "0 0 * * *", "@weekly": "0 0 * * 0", "@monthly": "0 0 1 * *", "@yearly": "0 0 1 1 *", "@annually": "0 0 1 1 *" }[expr.trim()];
   const [mi, ho, dom, mon, dow] = (alias ?? expr).trim().split(/\s+/);
   const isNum = (x) => /^\d+$/.test(x ?? "");
   if (dom === "*" && mon === "*" && dow === "*") {
-    if (isNum(mi) && isNum(ho)) return `Every day at ${pad2(ho)}:${pad2(mi)}`;
-    if (isNum(mi) && ho === "*") return mi === "0" ? "Every hour" : `Every hour at :${pad2(mi)}`;
-    if (isNum(mi) && /^\*\/\d+$/.test(ho)) return `Every ${ho.slice(2)} hours`;
-    if (/^\*\/\d+$/.test(mi) && ho === "*") return `Every ${mi.slice(2)} minutes`;
+    if (isNum(mi) && isNum(ho)) return t("Every day at {time}", { time: `${pad2(ho)}:${pad2(mi)}` });
+    if (isNum(mi) && ho === "*") return mi === "0" ? t("Every hour") : t("Every hour at :{m}", { m: pad2(mi) });
+    if (isNum(mi) && /^\*\/\d+$/.test(ho)) return tn("Every hour", "Every {n} hours", Number(ho.slice(2)));
+    if (/^\*\/\d+$/.test(mi) && ho === "*") return tn("Every minute", "Every {n} minutes", Number(mi.slice(2)));
   }
-  if (isNum(mi) && isNum(ho) && dom === "*" && mon === "*" && /^[0-7]$/.test(dow)) return `Every ${DAYS[Number(dow) % 7]} at ${pad2(ho)}:${pad2(mi)}`;
-  if (isNum(mi) && isNum(ho) && isNum(dom) && mon === "*" && dow === "*") return `Monthly on day ${dom} at ${pad2(ho)}:${pad2(mi)}`;
+  if (isNum(mi) && isNum(ho) && dom === "*" && mon === "*" && /^[0-7]$/.test(dow)) return WEEKLY[Number(dow) % 7](`${pad2(ho)}:${pad2(mi)}`);
+  if (isNum(mi) && isNum(ho) && isNum(dom) && mon === "*" && dow === "*") return t("Monthly on day {day} at {time}", { day: dom, time: `${pad2(ho)}:${pad2(mi)}` });
   return expr;
 }
 
@@ -325,6 +388,13 @@ export function stamp(ms) {
 /** A labelled select that looks like the filter buttons of the design. */
 export const select = (id, label, options, value) =>
   h`<label class="sel"><span class="muted">${label}</span><select id="${id}">${options.map(([v, l]) => h`<option value="${v}" ${v === value ? raw("selected") : ""}>${l}</option>`)}</select>${icon("chevron-down")}</label>`;
+
+/** The language picker; the page reloads in the chosen language. Wire it up with bindLang(). */
+export const langSelect = (id = "lang", label = t("Language")) => select(id, label, LANGS, lang);
+export function bindLang(root, id = "lang") {
+  const s = root.querySelector(`#${id}`);
+  if (s) s.onchange = () => setLang(s.value);
+}
 
 export function escapeRe(s) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

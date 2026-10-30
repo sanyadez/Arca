@@ -1,20 +1,20 @@
 // Arca web UI: shell (sidebar / phone tab bar), hash router, session, theme, sign-in, connection banner.
 import { SPRITE } from "./icons.js";
-import { api, h, icon, onApi, raw, toast } from "./lib.js";
+import { api, bindLang, h, ht, icon, langSelect, onApi, raw, t, toast } from "./lib.js";
 
 const NAV = [
-  { path: "", label: "Overview", icon: "layout-grid" },
-  { path: "sources", label: "Sources", icon: "folder-sync" },
-  { path: "snapshots", label: "Snapshots", icon: "camera" },
-  { path: "runs", label: "Runs", icon: "activity" },
-  { path: "repositories", label: "Repositories", icon: "database" },
-  { path: "access", label: "Access", icon: "key-round" },
+  { path: "", label: t("Overview"), icon: "layout-grid" },
+  { path: "sources", label: t("Sources"), icon: "folder-sync" },
+  { path: "snapshots", label: t("Snapshots"), icon: "camera" },
+  { path: "runs", label: t("Runs"), icon: "activity" },
+  { path: "repositories", label: t("Repositories"), icon: "database" },
+  { path: "access", label: t("Access"), icon: "key-round" },
 ];
 const NAV_BOTTOM = [
-  { path: "recovery", label: "Recovery kit", icon: "life-buoy" },
-  { path: "settings", label: "Settings", icon: "settings" },
+  { path: "recovery", label: t("Recovery kit"), icon: "life-buoy" },
+  { path: "settings", label: t("Settings"), icon: "settings" },
 ];
-const TABS = [NAV[0], NAV[1], NAV[2], NAV[3], { path: "more", label: "More", icon: "ellipsis" }];
+const TABS = [NAV[0], NAV[1], NAV[2], NAV[3], { path: "more", label: t("More"), icon: "ellipsis" }];
 
 /** Route table: first matching pattern wins; `:x` captures one segment. */
 const ROUTES = [
@@ -54,10 +54,10 @@ function setTheme(t) {
 applyTheme(theme());
 
 const themeSwitch = () =>
-  h`<div class="seg" role="radiogroup" aria-label="Theme">${[
-    ["light", "sun", "Light"],
-    ["dark", "moon", "Dark"],
-    ["system", "monitor", "System"],
+  h`<div class="seg" role="radiogroup" aria-label="${t("Theme")}">${[
+    ["light", "sun", t("Light")],
+    ["dark", "moon", t("Dark")],
+    ["system", "monitor", t("System")],
   ].map(([v, i, l]) => h`<button type="button" data-theme-set="${v}" class="${theme() === v ? "on" : ""}" title="${l}" aria-label="${l}">${icon(i)}</button>`)}</div>`;
 
 // ── routing ──
@@ -94,7 +94,7 @@ function renderShell() {
         <div class="sidebar-bottom">
           <nav class="nav" id="nav-bottom"></nav>
           <div class="user-card">
-            <button class="who btn ghost sm" id="user-menu" title="Signed in with the token “${session.name}”">
+            <button class="who btn ghost sm" id="user-menu" title="${t("Signed in with the token “{name}”", { name: session.name })}">
               <span class="avatar">${icon("user")}</span><span>${session.name}</span>
             </button>
             ${themeSwitch()}
@@ -115,8 +115,8 @@ function renderShell() {
   document.getElementById("user-menu").onclick = async (e) => {
     const { menu } = await import("./lib.js");
     menu(e.currentTarget, [
-      { label: "Sign out", icon: "log-out", onClick: signOut },
-      { label: "Sign out everywhere", icon: "log-out", onClick: () => signOut(true) },
+      { label: t("Sign out"), icon: "log-out", onClick: signOut },
+      { label: t("Sign out everywhere"), icon: "log-out", onClick: () => signOut(true) },
     ]);
   };
 }
@@ -153,19 +153,20 @@ async function route() {
 }
 
 function renderMore(el) {
-  el.innerHTML = h`<div class="page-head"><div><h1>More</h1></div></div>
+  el.innerHTML = h`<div class="page-head"><div><h1>${t("More")}</h1></div></div>
     <div class="card">${[NAV[4], NAV[5], ...NAV_BOTTOM].map((n) => h`<a class="list-row" href="#/${n.path}">${icon(n.icon)}<span class="grow">${n.label}</span>${icon("chevron-right")}</a>`)}
-    <button class="list-row btn ghost" style="width:100%;justify-content:flex-start;border-radius:0" id="more-out">${icon("log-out")}<span class="grow" style="text-align:left">Sign out</span></button></div>
-    <div style="margin-top:16px">${themeSwitch()}</div>`.s;
+    <button class="list-row btn ghost" style="width:100%;justify-content:flex-start;border-radius:0" id="more-out">${icon("log-out")}<span class="grow" style="text-align:left">${t("Sign out")}</span></button></div>
+    <div style="margin-top:16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap">${themeSwitch()}${langSelect()}</div>`.s;
   el.querySelector("#more-out").onclick = () => signOut();
+  bindLang(el);
 }
 
 /** Pages of later stages: a clear note instead of a broken screen. */
 function renderLater(el, path) {
   const item = [...NAV, ...NAV_BOTTOM].find((n) => n.path === path.split("/")[0]);
-  el.innerHTML = h`<div class="page-head"><div><h1>${item?.label ?? "Not found"}</h1></div></div>
+  el.innerHTML = h`<div class="page-head"><div><h1>${item?.label ?? t("Not found")}</h1></div></div>
     <div class="card pad"><div class="notice info">${icon("info")}<div>${
-      item ? "This page is not in the web UI yet. Until then the command line has it: run arca --help on the server." : "There is no such page."
+      item ? t("This page is not in the web UI yet. Until then the command line has it: run arca --help on the server.") : t("There is no such page.")
     }</div></div></div>`.s;
 }
 
@@ -177,8 +178,8 @@ onApi("offline", () => {
   if (!b) return;
   let left = 8;
   const draw = () =>
-    (b.innerHTML = h`<div class="banner">${icon("unplug")}<span class="grow">Lost connection to the server. Retrying in ${left} s…</span>
-      <button class="btn secondary sm" id="retry-now">Retry now</button></div>`.s);
+    (b.innerHTML = h`<div class="banner">${icon("unplug")}<span class="grow">${t("Lost connection to the server. Retrying in {n} s…", { n: left })}</span>
+      <button class="btn secondary sm" id="retry-now">${t("Retry now")}</button></div>`.s);
   const tick = async () => {
     if (left <= 0) {
       left = 8;
@@ -196,7 +197,7 @@ onApi("online", () => {
   clearInterval(retryTimer);
   const b = document.getElementById("banner");
   if (b) b.innerHTML = "";
-  toast("Connection restored", "ok");
+  toast(t("Connection restored"), "ok");
   route();
 });
 onApi("unauthorized", (r) => {
@@ -214,40 +215,42 @@ fetch("/api/health")
   .then((r) => r.json())
   .then((j) => {
     serverHost = j.host ?? null;
-    const t = document.querySelector(".signin h1");
-    if (t && serverHost) t.textContent = `Sign in to ${serverHost}`;
+    const title = document.querySelector(".signin h1");
+    if (title && serverHost) title.textContent = t("Sign in to {host}", { host: serverHost });
   })
   .catch(() => {});
 
 function renderSignIn(error) {
   const note =
     reason === "revoked"
-      ? "The token of your session was revoked. Sign in with another token."
+      ? t("The token of your session was revoked. Sign in with another token.")
       : reason === "expired"
-        ? "Your session has expired. Sign in again."
+        ? t("Your session has expired. Sign in again.")
         : null;
   app.innerHTML = h`
     <div class="signin-bg">
       <form class="signin card" id="signin" autocomplete="off">
         <div class="logo"><span class="logo-mark">${icon("archive")}</span>Arca</div>
-        <h1>Sign in to ${serverHost ?? "Arca"}</h1>
+        <h1>${t("Sign in to {host}", { host: serverHost ?? "Arca" })}</h1>
         ${note ? h`<div class="notice warn">${icon("triangle-alert")}<div>${note}</div></div>` : ""}
         <div class="field">
-          <label for="token">Access token</label>
+          <label for="token">${t("Access token")}</label>
           <div class="input-wrap">
             <input class="input big mono" id="token" type="password" autocomplete="current-password" spellcheck="false" required ${error ? raw('aria-invalid="true" style="border-color:var(--danger)"') : ""} />
-            <button type="button" class="btn ghost icon sm" id="reveal" aria-label="Show token">${icon("eye")}</button>
+            <button type="button" class="btn ghost icon sm" id="reveal" aria-label="${t("Show token")}">${icon("eye")}</button>
           </div>
           ${error ? h`<div class="err-text">${icon("triangle-alert")}<span>${error}</span></div>` : ""}
         </div>
-        <label class="check"><input type="checkbox" id="remember" /> Keep me signed in on this device</label>
-        <button class="btn primary lg" type="submit">Sign in</button>
+        <label class="check"><input type="checkbox" id="remember" /> ${t("Keep me signed in on this device")}</label>
+        <button class="btn primary lg" type="submit">${t("Sign in")}</button>
       </form>
       <div class="signin-foot">
-        <div>Create one on the server: <code>arca token &lt;name&gt;</code></div>
-        <a href="https://github.com/sanyadez/Arca#readme" target="_blank" rel="noopener">Docs ${icon("external-link")}</a>
+        <div>${ht("Create one on the server: {cmd}", { cmd: h`<code>arca token &lt;name&gt;</code>` })}</div>
+        <a href="https://github.com/sanyadez/Arca#readme" target="_blank" rel="noopener">${t("Docs")} ${icon("external-link")}</a>
+        ${langSelect()}
       </div>
     </div>`.s;
+  bindLang(app);
   const input = document.getElementById("token");
   input.focus();
   document.getElementById("reveal").onclick = () => {
@@ -262,7 +265,7 @@ function renderSignIn(error) {
       reason = null;
       await start();
     } catch (err) {
-      renderSignIn(err.status === 401 ? "This token is not valid on this server. Check it, or create a new one with arca token <name>." : err.message);
+      renderSignIn(err.status === 401 ? t("This token is not valid on this server. Check it, or create a new one with arca token <name>.") : err.message);
     }
   };
 }
@@ -282,7 +285,7 @@ async function start() {
     session = await api("/api/session");
   } catch (e) {
     if (e.status === 401) return renderSignIn();
-    app.innerHTML = h`<div class="signin-bg"><div class="notice danger">${icon("unplug")}<div>Cannot reach the Arca server: ${e.message}</div></div></div>`.s;
+    app.innerHTML = h`<div class="signin-bg"><div class="notice danger">${icon("unplug")}<div>${t("Cannot reach the Arca server: {error}", { error: e.message })}</div></div></div>`.s;
     return;
   }
   if (session.via === "token") {

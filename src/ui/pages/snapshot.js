@@ -1,5 +1,5 @@
 // Snapshot browser: folder tree, files with new/changed marks against the parent snapshot, restore.
-import { api, bytes, can, clock, duration, h, icon, modal, modeString, num, raw, stamp, toast, toastError } from "../lib.js";
+import { api, bytes, can, clock, duration, h, ht, icon, modal, modeString, num, raw, stamp, t, tn, toast, toastError } from "../lib.js";
 
 const PAGE = 200;
 
@@ -15,18 +15,18 @@ export async function page(el, { repo, id }, { session, navigate }) {
   const st = snap.stats ?? {};
 
   el.innerHTML = h`
-    <div class="crumbs"><a href="#/snapshots">Snapshots</a>${icon("chevron-right")}<a href="#/sources/${encodeURIComponent(snap.source)}">${snap.source}</a>${icon("chevron-right")}<span class="cur mono">${snap.id.slice(0, 8)}</span></div>
+    <div class="crumbs"><a href="#/snapshots">${t("Snapshots")}</a>${icon("chevron-right")}<a href="#/sources/${encodeURIComponent(snap.source)}">${snap.source}</a>${icon("chevron-right")}<span class="cur mono">${snap.id.slice(0, 8)}</span></div>
     <div class="page-head">
-      <div><h1>Snapshot <span class="mono" style="font-weight:600">${snap.id.slice(0, 8)}</span></h1>
-        <div class="meta-line"><span class="mono">${stamp(Date.parse(snap.time))}</span>·<span>host <span class="mono">${snap.host}</span></span>·<span><span class="mono">${num(st.files)}</span> files</span>·<span class="mono">${bytes(st.bytes ?? null)}</span>·<span><span class="mono">${bytes(st.newBytes ?? null, { plus: true })}</span> new</span>·<span class="mono">${duration(st.seconds)}</span>${snap.tags.length ? h`·<span>tags ${snap.tags.map((t) => h`<span class="tag">${t}</span> `)}</span>` : ""}</div></div>
+      <div><h1>${ht("Snapshot {id}", { id: h`<span class="mono" style="font-weight:600">${snap.id.slice(0, 8)}</span>` })}</h1>
+        <div class="meta-line"><span class="mono">${stamp(Date.parse(snap.time))}</span>·<span>${ht("host {host}", { host: h`<span class="mono">${snap.host}</span>` })}</span>·<span>${tn("{n} file", "{n} files", st.files)}</span>·<span class="mono">${bytes(st.bytes ?? null)}</span>·<span>${ht("{size} new", { size: h`<span class="mono">${bytes(st.newBytes ?? null, { plus: true })}</span>` })}</span>·<span class="mono">${duration(st.seconds)}</span>${snap.tags.length ? h`·<span>${ht("tags {tags}", { tags: h`${snap.tags.map((tag) => h`<span class="tag">${tag}</span> `)}` })}</span>` : ""}</div></div>
       <div class="actions">
-        ${snap.parent ? h`<label class="switch"><input type="checkbox" id="cmp" ${compare ? raw("checked") : ""} />Compare with previous</label>` : ""}
-        <button class="btn secondary" id="restore-all" ${can(session, "restore") ? "" : "disabled"}>${icon("history")}Restore whole snapshot…</button>
+        ${snap.parent ? h`<label class="switch"><input type="checkbox" id="cmp" ${compare ? raw("checked") : ""} />${t("Compare with previous")}</label>` : ""}
+        <button class="btn secondary" id="restore-all" ${can(session, "restore") ? "" : "disabled"}>${icon("history")}${t("Restore whole snapshot…")}</button>
       </div>
     </div>
     <div class="browser">
       <div class="card tree-pane">
-        <label class="search">${icon("search")}<input class="input" id="find" type="search" placeholder="Find in this snapshot…" /></label>
+        <label class="search">${icon("search")}<input class="input" id="find" type="search" placeholder="${t("Find in this snapshot…")}" /></label>
         <div id="tree"></div>
       </div>
       <div class="card" id="folder"></div>
@@ -59,7 +59,7 @@ export async function page(el, { repo, id }, { session, navigate }) {
       acc = acc ? `${acc}/${seg}` : seg;
       expanded.add(acc);
     }
-    el.querySelector("#folder").innerHTML = h`<div class="empty-ok">${icon("loader-circle", "spin")}Loading…</div>`.s;
+    el.querySelector("#folder").innerHTML = h`<div class="empty-ok">${icon("loader-circle", "spin")}${t("Loading…")}</div>`.s;
     try {
       listing = await fetchFolder(p);
       treeCache.set(p, listing.items.filter((i) => i.type === "dir"));
@@ -77,25 +77,25 @@ export async function page(el, { repo, id }, { session, navigate }) {
   function drawFolder() {
     const l = listing;
     el.querySelector("#folder").innerHTML = h`
-      <div class="card-head" style="font-weight:400;flex-wrap:wrap"><span><span class="mono" style="font-weight:600">${shownPath(path)}</span> <span class="muted small">· ${num(l.total)} items</span></span>
-        ${l.comparedWith ? h`<span class="muted small">Compared with <span class="mono" style="color:var(--text)">${l.comparedWith.id.slice(0, 8)}</span> ${stamp(Date.parse(l.comparedWith.time))}</span>` : ""}</div>
+      <div class="card-head" style="font-weight:400;flex-wrap:wrap"><span><span class="mono" style="font-weight:600">${shownPath(path)}</span> <span class="muted small">· ${tn("{n} item", "{n} items", l.total)}</span></span>
+        ${l.comparedWith ? h`<span class="muted small">${ht("Compared with {id} {time}", { id: h`<span class="mono" style="color:var(--text)">${l.comparedWith.id.slice(0, 8)}</span>`, time: stamp(Date.parse(l.comparedWith.time)) })}</span>` : ""}</div>
       ${path ? h`<button class="list-row btn ghost" id="up" style="width:100%;justify-content:flex-start;border-radius:0">${icon("chevron-left")}<span class="mono small">..</span></button>` : ""}
       <div class="table-wrap"><table class="t">
-        <thead><tr><th class="cb"><input type="checkbox" class="cbx" id="all" aria-label="Select all" /></th><th>Name</th>${compare ? raw("<th>Change</th>") : ""}<th class="right">Size</th><th>Modified</th><th class="hide-phone">Permissions</th><th class="hide-phone">Owner</th></tr></thead>
+        <thead><tr><th class="cb"><input type="checkbox" class="cbx" id="all" aria-label="${t("Select all")}" /></th><th>${t("Name")}</th>${compare ? h`<th>${t("Change")}</th>` : ""}<th class="right">${t("Size")}</th><th>${t("Modified")}</th><th class="hide-phone">${t("Permissions")}</th><th class="hide-phone">${t("Owner")}</th></tr></thead>
         <tbody>${l.items.map((it) => {
           const p = full(it.name);
           const sel = selected.has(p);
           return h`<tr class="${it.type === "dir" ? "click" : ""} ${sel ? "sel" : ""}" data-p="${p}" data-dir="${it.type === "dir" ? "1" : ""}">
-            <td class="cb"><input type="checkbox" class="cbx" data-sel="${p}" ${sel ? raw("checked") : ""} aria-label="Select ${it.name}" /></td>
+            <td class="cb"><input type="checkbox" class="cbx" data-sel="${p}" ${sel ? raw("checked") : ""} aria-label="${t("Select {name}", { name: it.name })}" /></td>
             <td class="mono" style="font-size:var(--text-sm)">${icon(it.type === "dir" ? "folder" : it.type === "symlink" ? "link" : "file")} ${it.name}${it.type === "dir" ? "/" : ""}${it.target ? h` <span class="muted">→ ${it.target}</span>` : ""}</td>
-            ${compare ? h`<td>${it.change === "new" ? h`<span class="tag new">new</span>` : it.change === "changed" ? h`<span class="tag changed">changed</span>` : ""}${it.type === "dir" && it.added ? h` <span class="mono small muted">${bytes(it.added, { plus: true })}</span>` : ""}</td>` : ""}
+            ${compare ? h`<td>${it.change === "new" ? h`<span class="tag new">${t("new")}</span>` : it.change === "changed" ? h`<span class="tag changed">${t("changed")}</span>` : ""}${it.type === "dir" && it.added ? h` <span class="mono small muted">${bytes(it.added, { plus: true })}</span>` : ""}</td>` : ""}
             <td class="num">${it.type === "dir" ? "—" : bytes(it.size ?? 0)}</td>
             <td class="mono nowrap">${stamp(it.mtime)}</td>
             <td class="mono muted hide-phone">${modeString(it.mode, it.type)}</td>
             <td class="mono muted hide-phone">${it.uid}:${it.gid}</td></tr>`;
         })}</tbody></table></div>
-      <div class="pager"><span>${num(l.items.length)} of ${num(l.total)} in this folder</span>
-        <div class="btns">${l.items.length < l.total ? h`<button class="btn secondary" id="load-more">${icon("chevron-down")}Load more</button>` : ""}</div></div>`.s;
+      <div class="pager"><span>${t("{shown} of {total} in this folder", { shown: num(l.items.length), total: num(l.total) })}</span>
+        <div class="btns">${l.items.length < l.total ? h`<button class="btn secondary" id="load-more">${icon("chevron-down")}${t("Load more")}</button>` : ""}</div></div>`.s;
     const f = el.querySelector("#folder");
     f.querySelector("#up")?.addEventListener("click", () => openFolder(path.split("/").slice(0, -1).join("/")));
     f.querySelectorAll("tr[data-dir='1']").forEach((r) => (r.onclick = (e) => !e.target.closest("input") && openFolder(r.dataset.p)));
@@ -153,12 +153,12 @@ export async function page(el, { repo, id }, { session, navigate }) {
   async function find(q) {
     if (q.length < 2) return drawTree();
     const box = el.querySelector("#tree");
-    box.innerHTML = h`<div class="empty-ok">${icon("loader-circle", "spin")}Searching…</div>`.s;
+    box.innerHTML = h`<div class="empty-ok">${icon("loader-circle", "spin")}${t("Searching…")}</div>`.s;
     try {
       const r = await api(`/api/search?${new URLSearchParams({ q, repo, snapshot: snap.id })}`);
       box.innerHTML = r.hits.length
         ? r.hits.map((x) => h`<div class="tnode" data-hit="${x.path}" title="${x.path}">${icon(x.type === "dir" ? "folder" : "file")}<span class="nm">${x.path}</span></div>`.s).join("")
-        : h`<div class="empty-ok">No match.</div>`.s;
+        : h`<div class="empty-ok">${t("No match.")}</div>`.s;
       box.querySelectorAll("[data-hit]").forEach((n) => (n.onclick = () => {
         const p = n.dataset.hit;
         const hit = r.hits.find((x) => x.path === p);
@@ -174,9 +174,9 @@ export async function page(el, { repo, id }, { session, navigate }) {
     if (!selected.size) return (box.innerHTML = "");
     const items = [...selected.values()];
     const size = items.reduce((a, i) => a + (i.type === "dir" ? 0 : (i.size ?? 0)), 0);
-    box.innerHTML = h`<div class="bulkbar"><b>${items.length} item${items.length === 1 ? "" : "s"}</b><span class="mono small muted">${bytes(size)}${items.some((i) => i.type === "dir") ? " + folders" : ""}</span>
-      <span class="grow"></span><button class="btn ghost" id="clear">${icon("x")}Clear</button>
-      <button class="btn primary" id="restore-sel" ${can(session, "restore") ? "" : "disabled"}>${icon("history")}Restore selected…</button></div>`.s;
+    box.innerHTML = h`<div class="bulkbar"><b>${tn("{n} item", "{n} items", items.length)}</b><span class="mono small muted">${bytes(size)}${items.some((i) => i.type === "dir") ? ` ${t("+ folders")}` : ""}</span>
+      <span class="grow"></span><button class="btn ghost" id="clear">${icon("x")}${t("Clear")}</button>
+      <button class="btn primary" id="restore-sel" ${can(session, "restore") ? "" : "disabled"}>${icon("history")}${t("Restore selected…")}</button></div>`.s;
     box.querySelector("#clear").onclick = () => {
       selected.clear();
       drawFolder();
@@ -191,19 +191,19 @@ export async function page(el, { repo, id }, { session, navigate }) {
     const defName = `${snap.source}-${snap.id.slice(0, 8)}`.replace(/[^\w.-]+/g, "-");
     const rootDir = snap.restoreRoot.replace(/\/+$/, "");
     let mEl = null;
-    const label = paths.length ? `Restore ${paths.length} item${paths.length === 1 ? "" : "s"}` : "Restore snapshot";
+    const label = paths.length ? tn("Restore {n} item", "Restore {n} items", paths.length) : t("Restore snapshot");
     const v = await modal({
-      title: h`Restore from <span class="mono">${snap.id.slice(0, 8)}</span>`,
-      body: h`<div class="muted" style="margin-top:-8px">${snap.source} on ${snap.host}, ${stamp(Date.parse(snap.time))}</div>
-        <div><div style="display:flex;justify-content:space-between"><b>What</b><span class="mono small muted">${paths.length ? `${paths.length} items, ${bytes(total)}` : `${num(st.files)} files, ${bytes(st.bytes ?? null)}`}</span></div>
-          <div class="what-list" style="margin-top:8px">${paths.length ? items.map(([p, i]) => h`<div><span>${shownPath(p)}${i?.type === "dir" ? "/" : ""}</span><span>${i?.type === "dir" ? "folder" : bytes(i?.size ?? 0)}</span></div>`) : h`<div><span>${shownPath("")} — the whole snapshot</span></div>`}</div></div>
-        <div class="field"><b>Where</b>
-          <label for="target" style="display:flex;justify-content:space-between;font-weight:500">Target folder <span class="muted small" style="font-weight:400">on this server · generated, editable</span></label>
+      title: ht("Restore from {id}", { id: h`<span class="mono">${snap.id.slice(0, 8)}</span>` }),
+      body: h`<div class="muted" style="margin-top:-8px">${t("{source} on {host}, {time}", { source: snap.source, host: snap.host, time: stamp(Date.parse(snap.time)) })}</div>
+        <div><div style="display:flex;justify-content:space-between"><b>${t("What")}</b><span class="mono small muted">${paths.length ? tn("{n} item, {size}", "{n} items, {size}", paths.length, { size: bytes(total) }) : tn("{n} file, {size}", "{n} files, {size}", st.files, { size: bytes(st.bytes ?? null) })}</span></div>
+          <div class="what-list" style="margin-top:8px">${paths.length ? items.map(([p, i]) => h`<div><span>${shownPath(p)}${i?.type === "dir" ? "/" : ""}</span><span>${i?.type === "dir" ? t("folder") : bytes(i?.size ?? 0)}</span></div>`) : h`<div><span>${t("{path} — the whole snapshot", { path: shownPath("") })}</span></div>`}</div></div>
+        <div class="field"><b>${t("Restore to")}</b>
+          <label for="target" style="display:flex;justify-content:space-between;font-weight:500">${t("Target folder")} <span class="muted small" style="font-weight:400">${t("on this server · generated, editable")}</span></label>
           <div class="prefix-input">${icon("folder")}<span class="pre">${rootDir}/</span><input id="target" value="${defName}" spellcheck="false" /></div>
-          <span class="hint">Arca never overwrites: the folder must be new or empty.</span></div>
-        <label class="check"><input type="checkbox" id="owners" checked /> Keep permissions and owners</label>
-        <label class="check"><input type="checkbox" id="verify" checked /> Verify after restore</label>
-        <div class="notice info">${icon("info")}<div>Need it on another machine? Copy the folder from this server, or use <span class="mono">arca-restore</span> there.</div></div>`,
+          <span class="hint">${t("Arca never overwrites: the folder must be new or empty.")}</span></div>
+        <label class="check"><input type="checkbox" id="owners" checked /> ${t("Keep permissions and owners")}</label>
+        <label class="check"><input type="checkbox" id="verify" checked /> ${t("Verify after restore")}</label>
+        <div class="notice info">${icon("info")}<div>${ht("Need it on another machine? Copy the folder from this server, or use {cmd} there.", { cmd: h`<span class="mono">arca-restore</span>` })}</div></div>`,
       actions: [{ label, kind: "primary", icon: "history", value: "go" }],
       onMount: (m) => {
         mEl = m;
@@ -220,7 +220,7 @@ export async function page(el, { repo, id }, { session, navigate }) {
         method: "POST",
         body: { paths: paths.length ? paths : undefined, target: (m.dataset.target ?? defName).trim(), owners: m.dataset.owners !== "0", verify: m.dataset.verify !== "0" },
       });
-      toast(h`Restore started · <a href="#/runs/${r.runId}">open run #${r.runId}</a>`, "ok");
+      toast(ht("Restore started · {link}", { link: h`<a href="#/runs/${r.runId}">${t("open run #{id}", { id: r.runId })}</a>` }), "ok");
       navigate(`runs/${r.runId}`);
     } catch (e) {
       toastError(e);

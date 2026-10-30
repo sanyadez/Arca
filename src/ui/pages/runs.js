@@ -1,11 +1,11 @@
 // Runs: what is running now and the history of every backup, prune, check and restore.
-import { api, badge, h, icon, num, runDuration, sourcePath, toast, toastError, trigger, when, duration } from "../lib.js";
+import { api, badge, h, icon, num, runDuration, sourcePath, t, tn, toast, toastError, trigger, when, duration } from "../lib.js";
 import { progressOf } from "./overview.js";
 
 const PAGE = 25;
 const DAYS = 7;
 const KIND_ICON = { backup: "upload", prune: "scissors", check: "shield", restore: "history", forget: "scissors" };
-const KIND_LABEL = { backup: "Backup", prune: "Prune", check: "Check", restore: "Restore", forget: "Forget" };
+const KIND_LABEL = { backup: t("Backup"), prune: t("Prune"), check: t("Check"), restore: t("Restore"), forget: t("Forget") };
 
 export async function page(el, _params, { navigate }) {
   const qs = new URLSearchParams(location.hash.split("?")[1] ?? "");
@@ -16,8 +16,8 @@ export async function page(el, _params, { navigate }) {
 
   el.innerHTML = h`
     <div class="page-head">
-      <div><h1>Runs</h1><div class="sub" id="runs-sub">Every backup, prune, check and restore in the last ${DAYS} days</div></div>
-      <div class="actions"><label class="search">${icon("search")}<input class="input" id="q" type="search" placeholder="Search source, token or summary" value="${f.q}" /></label></div>
+      <div><h1>${t("Runs")}</h1><div class="sub" id="runs-sub">${tn("Every backup, prune, check and restore in the last {n} day", "Every backup, prune, check and restore in the last {n} days", DAYS)}</div></div>
+      <div class="actions"><label class="search">${icon("search")}<input class="input" id="q" type="search" placeholder="${t("Search source, token or summary")}" value="${f.q}" /></label></div>
     </div>
     <div id="active"></div>
     <div class="card" style="margin-top:24px">
@@ -58,18 +58,18 @@ export async function page(el, _params, { navigate }) {
     const running = d.active.filter((a) => a.status === "running").length;
     const queued = d.active.length - running;
     el.querySelector("#active").innerHTML = d.active.length
-      ? h`<h2 class="section" style="margin-top:0">Running now <span class="muted">${running} running${queued ? `, ${queued} queued` : ""}</span></h2>
+      ? h`<h2 class="section" style="margin-top:0">${t("Running now")} <span class="muted">${queued ? t("{running} running, {queued} queued", { running, queued }) : t("{n} running", { n: running })}</span></h2>
         <div class="card">${d.active.map(activeRow)}</div>`.s
       : "";
     el.querySelector("#filters").innerHTML = h`
-      ${f.source ? h`<div class="chip-group"><span class="label">Source</span><button class="chip on" data-clear-source>${f.source} ${icon("x")}</button></div>` : ""}
-      ${chips("Type", "kind", [["", "All"], ["backup", "Backup"], ["prune", "Prune"], ["check", "Check"], ["restore", "Restore"]])}
-      ${chips("Status", "status", [["", "All"], ["error", "Failed", "danger"], ["warning", "Warning", "warn"], ["running", "Running", "info"], ["interrupted", "Interrupted", "interrupted"]], d.statusCounts)}
-      ${chips("Trigger", "trigger", [["", "All"], ["schedule", "Schedule"], ["api", "API"], ["mcp", "MCP"]])}`.s;
-    el.querySelector("#table").innerHTML = (d.runs.length ? h`<div class="hide-phone">${table(d.runs)}</div><div class="show-phone" style="padding:0 12px 12px">${phoneRuns(d.runs)}</div>` : h`<div class="empty-ok">${icon("info")}No runs match these filters in the last ${DAYS} days.</div>`).s +
-      h`<div class="pager"><span>${num(Math.min(d.total, f.offset + d.runs.length))} of ${num(d.total)} runs in the last ${DAYS} days.</span>
-        <div class="btns"><button class="btn secondary" id="prev" ${f.offset === 0 ? "disabled" : ""}>${icon("chevron-left")}Previous</button>
-        <button class="btn secondary" id="next" ${f.offset + PAGE >= d.total ? "disabled" : ""}>Next${icon("chevron-right")}</button></div></div>`.s;
+      ${f.source ? h`<div class="chip-group"><span class="label">${t("Source")}</span><button class="chip on" data-clear-source>${f.source} ${icon("x")}</button></div>` : ""}
+      ${chips(t("Type"), "kind", [["", t("All")], ["backup", t("Backup")], ["prune", t("Prune")], ["check", t("Check")], ["restore", t("Restore")]])}
+      ${chips(t("Status"), "status", [["", t("All")], ["error", t("Failed"), "danger"], ["warning", t("Warning"), "warn"], ["running", t("Running"), "info"], ["interrupted", t("Interrupted"), "interrupted"]], d.statusCounts)}
+      ${chips(t("Trigger"), "trigger", [["", t("All")], ["schedule", t("Schedule")], ["api", "API"], ["mcp", "MCP"]])}`.s;
+    el.querySelector("#table").innerHTML = (d.runs.length ? h`<div class="hide-phone">${table(d.runs)}</div><div class="show-phone" style="padding:0 12px 12px">${phoneRuns(d.runs)}</div>` : h`<div class="empty-ok">${icon("info")}${tn("No runs match these filters in the last {n} day.", "No runs match these filters in the last {n} days.", DAYS)}</div>`).s +
+      h`<div class="pager"><span>${tn("{shown} of {n} run in the last {days} days.", "{shown} of {n} runs in the last {days} days.", d.total, { shown: num(Math.min(d.total, f.offset + d.runs.length)), days: DAYS })}</span>
+        <div class="btns"><button class="btn secondary" id="prev" ${f.offset === 0 ? "disabled" : ""}>${icon("chevron-left")}${t("Previous")}</button>
+        <button class="btn secondary" id="next" ${f.offset + PAGE >= d.total ? "disabled" : ""}>${t("Next")}${icon("chevron-right")}</button></div></div>`.s;
 
     el.querySelectorAll("[data-f]").forEach((b) => (b.onclick = () => {
       f[b.dataset.f] = b.dataset.v;
@@ -86,7 +86,7 @@ export async function page(el, _params, { navigate }) {
     el.querySelectorAll("[data-cancel]").forEach((b) => (b.onclick = async () => {
       try {
         await api(`/api/runs/${b.dataset.cancel}/cancel`, { method: "POST" });
-        toast(`Run #${b.dataset.cancel} is being cancelled`);
+        toast(t("Run #{id} is being cancelled", { id: b.dataset.cancel }));
         reload();
       } catch (e) {
         toastError(e);
@@ -111,14 +111,14 @@ export async function page(el, _params, { navigate }) {
     const src = a.source && sources.get(a.source);
     return h`<div class="list-row" data-id="${a.id}" style="height:auto;padding:16px 24px;gap:20px;cursor:pointer;flex-wrap:wrap">
       <span style="width:110px">${badge(a.status)}</span>
-      <div style="flex:1 1 260px;min-width:0"><div>${icon(KIND_ICON[a.kind])} <b>${a.source ?? a.repo}</b> <span class="muted">${a.kind}${a.source ? ` to ${a.repo}` : ""}</span> <span class="mono small muted">#${a.id}</span></div>
+      <div style="flex:1 1 260px;min-width:0"><div>${icon(KIND_ICON[a.kind])} <b>${a.source ?? a.repo}</b> <span class="muted">${a.source ? t("{kind} to {repo}", { kind: (KIND_LABEL[a.kind] ?? a.kind).toLowerCase(), repo: a.repo }) : (KIND_LABEL[a.kind] ?? a.kind).toLowerCase()}</span> <span class="mono small muted">#${a.id}</span></div>
         <div style="margin-top:2px">${src ? sourcePath(src.path) : h`<span class="path">${a.repo}</span>`}</div></div>
-      <div style="flex:1 1 260px">${a.status === "queued" ? h`<span class="muted small">Waits for the previous job on ${a.repo}</span>`
+      <div style="flex:1 1 260px">${a.status === "queued" ? h`<span class="muted small">${t("Waits for the previous job on {repo}", { repo: a.repo })}</span>`
         : h`<div style="display:flex;justify-content:space-between" class="mono small"><span>${pr.pct === null ? "…" : `${pr.pct}%`}</span></div>
            <div class="bar ${pr.pct === null ? "indeterminate" : ""}" style="margin:6px 0"><span style="width:${pr.pct ?? 0}%"></span></div>
            <div class="mono small muted">${pr.line}${pr.files ? `, ${pr.files}` : ""}</div>`}</div>
       <span class="tag mono">${trigger(a.trigger)}</span>
-      <button class="btn secondary" data-cancel="${a.id}">${icon("x")}Cancel</button>
+      <button class="btn secondary" data-cancel="${a.id}">${icon("x")}${t("Cancel")}</button>
     </div>`;
   }
 
@@ -137,7 +137,7 @@ export async function page(el, _params, { navigate }) {
 
   function table(runs) {
     return h`<div class="table-wrap"><table class="t">
-      <thead><tr><th>Status</th><th>Type</th><th>Target</th><th class="hide-phone">Trigger</th><th>Started</th><th class="right hide-phone">Duration</th><th class="hide-phone">Summary</th></tr></thead>
+      <thead><tr><th>${t("Status")}</th><th>${t("Type")}</th><th>${t("Target")}</th><th class="hide-phone">${t("Trigger")}</th><th>${t("Started")}</th><th class="right hide-phone">${t("Duration")}</th><th class="hide-phone">${t("Summary")}</th></tr></thead>
       <tbody>${runs.map((r) => h`<tr class="click ${r.status === "error" ? "err" : ""}" data-id="${r.id}">
         <td>${badge(r.status)}</td>
         <td class="nowrap">${icon(KIND_ICON[r.kind] ?? "activity")} ${KIND_LABEL[r.kind] ?? r.kind}</td>
@@ -158,7 +158,7 @@ export async function page(el, _params, { navigate }) {
 
 function dayGroup(iso) {
   const d = new Date(iso);
-  if (d.toDateString() === new Date().toDateString()) return "Today";
-  if (d.toDateString() === new Date(Date.now() - 86400_000).toDateString()) return "Yesterday";
-  return "Earlier";
+  if (d.toDateString() === new Date().toDateString()) return t("Today");
+  if (d.toDateString() === new Date(Date.now() - 86400_000).toDateString()) return t("Yesterday");
+  return t("Earlier");
 }

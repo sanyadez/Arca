@@ -7,6 +7,7 @@ import * as tokensCssM from "../ui/tokens.css" with { type: "text" };
 import * as appCssM from "../ui/app.css" with { type: "text" };
 import * as iconsJsM from "../ui/icons.js" with { type: "text" };
 import * as libJsM from "../ui/lib.js" with { type: "text" };
+import * as ukJsM from "../ui/uk.js" with { type: "text" };
 import * as appJsM from "../ui/app.js" with { type: "text" };
 import * as overviewJsM from "../ui/pages/overview.js" with { type: "text" };
 import * as runsJsM from "../ui/pages/runs.js" with { type: "text" };
@@ -24,8 +25,8 @@ import { VERSION_STRING } from "../version";
 
 /** A text import as a string (the TS types of .js/.html modules do not know about `type: "text"`). */
 const txt = (m: unknown): string => (m as { default: string }).default;
-const [indexHtml, tokensCss, appCss, iconsJs, libJs, appJs] = [indexHtmlM, tokensCssM, appCssM, iconsJsM, libJsM, appJsM].map(txt) as [
-  string, string, string, string, string, string,
+const [indexHtml, tokensCss, appCss, iconsJs, libJs, ukJs, appJs] = [indexHtmlM, tokensCssM, appCssM, iconsJsM, libJsM, ukJsM, appJsM].map(txt) as [
+  string, string, string, string, string, string, string,
 ];
 const PAGES: Record<string, unknown> = {
   overview: overviewJsM, runs: runsJsM, run: runJsM, sources: sourcesJsM, source: sourceJsM, snapshots: snapshotsJsM, snapshot: snapshotJsM, sourceform: sourceformJsM,
@@ -37,6 +38,7 @@ const ASSETS: Record<string, [string, string]> = {
   "/assets/app.css": [appCss, "text/css"],
   "/assets/icons.js": [iconsJs, "text/javascript"],
   "/assets/lib.js": [libJs, "text/javascript"],
+  "/assets/uk.js": [ukJs, "text/javascript"],
   "/assets/app.js": [appJs, "text/javascript"],
   ...Object.fromEntries(Object.entries(PAGES).map(([name, m]) => [`/assets/pages/${name}.js`, [txt(m), "text/javascript"] as [string, string]])),
 };
