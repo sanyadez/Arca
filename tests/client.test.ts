@@ -131,6 +131,45 @@ describe("client end to end", () => {
     expect(svc.clients.state("laptop")).toMatchObject({ online: true, running: null });
   });
 
+  test("the wizard reads a folder on the machine through the client", async () => {
+    const ok = (await (await call("POST", "/api/sources/preview", ADMIN, JSON.stringify({ path: `client://laptop${src}` }))).body) as any;
+    expect(ok).toMatchObject({ ok: true });
+    expect(ok.files).toBeGreaterThan(0);
+    expect(ok.dirs.map((d: any) => d.path)).toContain("node_modules");
+
+    const missing = (await call("POST", "/api/sources/preview", ADMIN, JSON.stringify({ path: "client://laptop/no/such/folder" }))).body;
+    expect(missing.ok).toBe(false);
+    expect(missing.error).toContain("Not a directory");
+
+    const off = (await call("POST", "/api/sources/preview", ADMIN, JSON.stringify({ path: "client://nobody/srv" }))).body;
+    expect(off).toEqual({ ok: false, error: 'Unknown client "nobody"' });
+    const bad = (await call("POST", "/api/sources/preview", ADMIN, JSON.stringify({ path: "client://laptop/a/../b" }))).body;
+    expect(bad.ok).toBe(false);
+  });
+
+  test("a client that ignores requests (an older version) gets a clear error", async () => {
+    await call("GET", "/api/client/hello", ROGUE); // online, but nothing is polling
+    svc.clients.requestPickupMs = 50;
+    const r = (await call("POST", "/api/sources/preview", ADMIN, JSON.stringify({ path: "client://rogue/srv" }))).body;
+    svc.clients.requestPickupMs = 10_000;
+    expect(r.ok).toBe(false);
+    expect(r.error).toContain("did not answer");
+    // A request can only be answered by its own client, and only once.
+    expect((await call("POST", "/api/client/requests/999", ROGUE, "{}")).status).toBe(404);
+    const poll = await call("GET", "/api/client/poll?wait=0", ROGUE);
+    expect(poll.body).toEqual({ job: null, request: null });
+  });
+
+  test("the list of clients: state and sources, for read tokens too", async () => {
+    const all = (await call("GET", "/api/clients", ADMIN)).body;
+    expect(all.map((c: any) => c.name)).toEqual(["laptop", "rogue"]);
+    expect(all[0]).toMatchObject({ name: "laptop", online: true, known: true, sources: ["lap"] });
+    expect(JSON.stringify(all)).not.toContain("sha256");
+    expect((await call("GET", "/api/clients", LAPTOP)).status).toBe(403); // a client token does not see the others
+    const detail = (await call("GET", "/api/sources/ghost", ADMIN)).body;
+    expect(detail.client).toMatchObject({ name: "nobody", known: false, online: false });
+  });
+
   test("the storage proxy only appends, and only during a job", async () => {
     const st = "/api/client/storage/main";
     expect((await call("GET", `${st}/list?dir=index`, ROGUE)).status).toBe(403); // no job yet

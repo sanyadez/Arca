@@ -1,5 +1,5 @@
 // One source: size history, recent snapshots, the last run, schedule, retention, excludes, repository, connection.
-import { api, badge, bytes, can, copyText, cronText, duration, esc, h, ht, icon, locale, menu, num, raw, rel, t, tn, toast, toastError, when, clock, stamp } from "../lib.js";
+import { api, badge, bytes, can, clientBadge, copyText, cronText, duration, esc, h, ht, icon, locale, menu, num, raw, rel, t, tn, toast, toastError, when, clock, stamp } from "../lib.js";
 
 export async function page(el, { name }, { session, navigate }) {
   name = decodeURIComponent(name);
@@ -63,6 +63,7 @@ export async function page(el, { name }, { session, navigate }) {
               <dt>${t("Dedup")}</dt><dd class="mono">${d.repoInfo.stats?.dedup ? `${d.repoInfo.stats.dedup}×` : "—"}</dd>
               <dt>${t("Last check")}</dt><dd>${d.repoInfo.lastCheck ? h`<span class="mono small">${when(d.repoInfo.lastCheck.finished)}</span> ${badge(d.repoInfo.lastCheck.status)}` : h`<span class="muted">${t("never")}</span>`}</dd>
             </dl></div>
+          ${d.client ? clientCard(d.client) : ""}
           ${d.ssh ? h`<div class="card pad side-card"><h3>${t("Connection")}</h3><dl class="kv">
             <dt>${t("Transport")}</dt><dd>SSH</dd>
             <dt>${t("Forced command")}</dt><dd>${d.ssh.forced ? h`<span class="badge ok"><span class="dot"></span>${t("On")}</span>` : h`<span class="muted">${t("Off")}</span>`}</dd>
@@ -86,6 +87,18 @@ export async function page(el, { name }, { session, navigate }) {
         { label: t("Browse files"), icon: "folder-search", onClick: () => navigate(`snapshots/${d.repo}/${b.dataset.snapMenu}`) },
         { label: t("Restore…"), icon: "history", onClick: () => navigate(`snapshots/${d.repo}/${b.dataset.snapMenu}?restore=all`) },
       ])));
+  }
+
+  function clientCard(c) {
+    return h`<div class="card pad side-card"><h3>${t("Connection")}</h3><dl class="kv">
+      <dt>${t("Transport")}</dt><dd>${t("Client")}</dd>
+      <dt>${t("Machine")}</dt><dd><a href="#/clients">${c.name}</a>${c.host ? h` <span class="mono small muted">${c.host}</span>` : ""}</dd>
+      <dt>${t("State")}</dt><dd>${clientBadge(c)}</dd>
+      <dt>${t("Last seen")}</dt><dd class="mono">${c.lastSeen ? when(c.lastSeen) : "—"}</dd>
+      ${c.version ? h`<dt>${t("Version")}</dt><dd class="mono small">${c.version}</dd>` : ""}
+    </dl>${!c.known
+      ? h`<p class="muted small" style="margin:12px 0 0">${ht("Backups of this source fail: this client has no token. {link}.", { link: h`<a href="#/clients">${t("Add it again")}</a>` })}</p>`
+      : c.online ? "" : h`<p class="muted small" style="margin:12px 0 0">${t("A backup that starts while the machine is offline fails at once. The next scheduled one tries again.")}</p>`}</div>`;
   }
 
   function chartCard(snaps) {

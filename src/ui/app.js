@@ -7,6 +7,7 @@ const NAV = [
   { path: "sources", label: t("Sources"), icon: "folder-sync" },
   { path: "snapshots", label: t("Snapshots"), icon: "camera" },
   { path: "runs", label: t("Runs"), icon: "activity" },
+  { path: "clients", label: t("Clients"), icon: "laptop" },
   { path: "repositories", label: t("Repositories"), icon: "database" },
   { path: "access", label: t("Access"), icon: "key-round" },
 ];
@@ -25,6 +26,7 @@ const ROUTES = [
   ["sources/new", () => import("./pages/sourceform.js")],
   ["sources/:name", () => import("./pages/source.js")],
   ["sources/:name/edit", () => import("./pages/sourceform.js")],
+  ["clients", () => import("./pages/clients.js")],
   ["repositories", () => import("./pages/repositories.js")],
   ["access", () => import("./pages/access.js")],
   ["recovery", () => import("./pages/recovery.js")],
@@ -154,7 +156,7 @@ async function route() {
 
 function renderMore(el) {
   el.innerHTML = h`<div class="page-head"><div><h1>${t("More")}</h1></div></div>
-    <div class="card">${[NAV[4], NAV[5], ...NAV_BOTTOM].map((n) => h`<a class="list-row" href="#/${n.path}">${icon(n.icon)}<span class="grow">${n.label}</span>${icon("chevron-right")}</a>`)}
+    <div class="card">${[...NAV.slice(4), ...NAV_BOTTOM].map((n) => h`<a class="list-row" href="#/${n.path}">${icon(n.icon)}<span class="grow">${n.label}</span>${icon("chevron-right")}</a>`)}
     <button class="list-row btn ghost" style="width:100%;justify-content:flex-start;border-radius:0" id="more-out">${icon("log-out")}<span class="grow" style="text-align:left">${t("Sign out")}</span></button></div>
     <div style="margin-top:16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap">${themeSwitch()}${langSelect()}</div>`.s;
   el.querySelector("#more-out").onclick = () => signOut();

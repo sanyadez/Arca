@@ -47,7 +47,7 @@ export class Service {
     readonly configStore?: ConfigStore,
   ) {
     this.db = db ?? new RunsDb(join(cfg.dataDir, "runs.sqlite"));
-    this.clients = new ClientHub(() => this.cfg, { get: (k) => this.db.getValue(k), set: (k, v) => this.db.setValue(k, v) });
+    this.clients = new ClientHub(() => this.cfg, { get: (k) => this.db.getValue(k), set: (k, v) => this.db.setValue(k, v), del: (k) => this.db.deleteValue(k) });
   }
 
   /** Switch to a new config without a restart: open repositories whose address or password changed are reopened. */

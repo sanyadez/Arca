@@ -1,5 +1,5 @@
 // New / edit source: a five-step wizard (Where → What → When → Keep → Review).
-import { adminTag, api, bytes, can, copyText, cronText, h, ht, icon, locale, modal, num, raw, stamp, t, tn, toast, toastError } from "../lib.js";
+import { adminTag, api, bytes, can, clientBadge, copyText, cronText, h, ht, icon, locale, modal, num, raw, stamp, t, tn, toast, toastError } from "../lib.js";
 
 const STEPS = [t("Where"), t("What"), t("When"), t("Keep"), t("Review")];
 const SUBTITLE = [t("Where the folder lives"), t("What to back up"), t("When to back up"), t("What to keep"), t("Check and create")];
@@ -42,6 +42,8 @@ export async function page(el, params, { session, navigate }) {
   }
   const overview = await api("/api/overview");
   const repos = overview.repos.map((r) => r.name);
+  const clients = await api("/api/clients");
+  const preset = new URLSearchParams(location.hash.split("?")[1] ?? "").get("client");
   const st = {
     step: 0,
     type: "local",
@@ -53,6 +55,8 @@ export async function page(el, params, { session, navigate }) {
     port: "22",
     rpath: "",
     forced: true,
+    client: clients.some((c) => c.name === preset) ? preset : clients[0]?.name ?? "",
+    cpath: "",
     repo: repos[0] ?? "",
     exclude: [],
     schedMode: "daily",
@@ -71,10 +75,12 @@ export async function page(el, params, { session, navigate }) {
     const d = await api(`/api/sources/${encodeURIComponent(editing)}`);
     Object.assign(st, { name: d.name, nameTouched: true, repo: d.repo, exclude: [...d.exclude], retention: d.retention ?? {}, retPreset: d.retention ? "custom" : "everything", step: 4 });
     const m = /^ssh:\/\/(?:([^@/]+)@)?([^/:]+)(?::(\d+))?(\/.*)$/.exec(d.path);
+    const c = /^client:\/\/([^/]+)(\/.*)$/.exec(d.path);
     if (m) Object.assign(st, { type: "ssh", user: m[1] ?? "", host: m[2], port: m[3] ?? "22", rpath: m[4], forced: !!d.ssh?.forced });
+    else if (c) Object.assign(st, { type: "client", client: c[1], cpath: c[2] });
     else st.path = d.path;
     setSchedule(d.schedule);
-  }
+  } else if (preset && st.client === preset) st.type = "client";
   if (!repos.length) {
     el.innerHTML = h`<div class="crumbs"><a href="#/sources">${t("Sources")}</a>${icon("chevron-right")}<span class="cur">${t("New source")}</span></div>
       <div class="page-head"><div><h1>${t("New source")}</h1></div></div>
@@ -105,15 +111,20 @@ export async function page(el, params, { session, navigate }) {
     }
   }
 
-  const sourcePath = () => (st.type === "local" ? st.path.trim() : `ssh://${st.user ? `${st.user}@` : ""}${st.host.trim()}${st.port && st.port !== "22" ? `:${st.port}` : ""}${st.rpath.trim()}`);
-  const rootPath = () => (st.type === "local" ? st.path.trim() : st.rpath.trim());
-  const where = () => (st.type === "local" ? st.path.trim() : st.host.trim() && st.rpath.trim().startsWith("/"));
+  const sourcePath = () =>
+    st.type === "local" ? st.path.trim()
+    : st.type === "client" ? `client://${st.client}${st.cpath.trim()}`
+    : `ssh://${st.user ? `${st.user}@` : ""}${st.host.trim()}${st.port && st.port !== "22" ? `:${st.port}` : ""}${st.rpath.trim()}`;
+  const rootPath = () => (st.type === "local" ? st.path.trim() : st.type === "client" ? st.cpath.trim() : st.rpath.trim());
+  const where = () => (st.type === "local" ? st.path.trim() : st.type === "client" ? st.client && st.cpath.trim().startsWith("/") : st.host.trim() && st.rpath.trim().startsWith("/"));
   const sshBody = () => (st.type === "ssh" ? { forced: st.forced, identity: key?.identity, sshOptions: ["StrictHostKeyChecking=accept-new"] } : undefined);
 
   function autoName() {
     if (st.nameTouched) return;
     const seg = rootPath().replace(/\/+$/, "").split("/").pop() ?? "";
-    st.name = seg.toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 63);
+    // On a client the machine is part of the name: two machines often have the same folders.
+    const base = st.type === "client" && rootPath() ? `${st.client}-${seg}` : seg;
+    st.name = base.toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 63);
   }
 
   // ── rendering ──
@@ -154,35 +165,45 @@ export async function page(el, params, { session, navigate }) {
     const card = (ty, ic, title, sub) => h`<button type="button" class="card choice ${st.type === ty ? "on" : ""}" data-type="${ty}"><span class="choice-ic">${icon(ic)}</span><span style="flex:1;text-align:left"><b>${title}</b><span class="muted">${sub}</span></span><span class="radio"></span></button>`;
     const line = key ? `restrict,from="${key.serverAddresses.join(",")}",command="/usr/local/bin/arca-src ${st.rpath || "/path"}" ${key.publicKey}` : "";
     return h`
-      <div class="grid" style="grid-template-columns:1fr 1fr;margin-bottom:20px">
+      <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(260px,1fr));margin-bottom:20px">
         ${card("local", "server", t("This server"), t("A folder on {host}, the machine Arca runs on.", { host: overview.server.host }))}
         ${card("ssh", "folder-sync", t("Another machine over SSH"), t("A folder on a different machine, read over SSH."))}
+        ${card("client", "laptop", t("A client on the machine"), t("The machine runs Arca and sends its own folders. It works behind NAT."))}
       </div>
       <div class="grid" style="grid-template-columns:${st.type === "ssh" ? "minmax(0,1fr) minmax(0,1.3fr)" : "1fr"}">
         <div class="card pad stack">
           <h3 style="margin:0">${t("Connection")}</h3>
           ${st.type === "local"
             ? h`<div class="field"><label for="f-path">${t("Path")}</label><input class="input big mono" id="f-path" value="${st.path}" placeholder="/srv/data" spellcheck="false" /></div>`
+            : st.type === "client" ? clientFields()
             : h`<div class="field"><label for="f-host">${t("Host")}</label><input class="input big mono" id="f-host" value="${st.host}" placeholder="git.example.lan" spellcheck="false" /></div>
               <div style="display:grid;grid-template-columns:1fr 110px;gap:12px"><div class="field"><label for="f-user">${t("User")}</label><input class="input big mono" id="f-user" value="${st.user}" spellcheck="false" /></div>
                 <div class="field"><label for="f-port">${t("Port")}</label><input class="input big mono" id="f-port" value="${st.port}" inputmode="numeric" /></div></div>
               <div class="field"><label for="f-rpath">${t("Path")}</label><input class="input big mono" id="f-rpath" value="${st.rpath}" placeholder="/var/lib/gitea" spellcheck="false" /><span class="hint mono">${where() ? sourcePath() : ""}</span></div>`}
           <div class="field"><label for="f-name">${t("Name")}</label><input class="input big" id="f-name" value="${st.name}" ${editing ? raw("disabled") : ""} placeholder="my-folder" /><span class="hint">${editing ? t("The name of a source cannot change.") : t("Filled from the path; you can change it")}</span></div>
           <div class="field"><label for="f-repo">${t("Repository")}</label><select class="input big" id="f-repo">${repos.map((r) => h`<option value="${r}" ${r === st.repo ? raw("selected") : ""}>${r}</option>`)}</select><span class="hint">${t("Where the encrypted snapshots go.")} <a href="#/repositories?new=1">${t("Add a repository")}</a></span></div>
-          ${st.type === "local" ? h`<div style="display:flex;gap:10px;align-items:center">${testButton()}</div>` : ""}
+          ${st.type !== "ssh" ? h`<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">${testButton()}</div>` : ""}
         </div>
         ${st.type === "ssh" ? h`<div class="card pad stack">
           <h3 style="margin:0">${st.host ? t("Allow Arca on {host}", { host: st.host }) : t("Allow Arca on the machine")}</h3>
           <p class="muted" style="margin:0">${ht("Add this line to {file} on the machine. It only lets Arca read the folders you choose.", { file: h`<span class="mono">~${st.user || "user"}/.ssh/authorized_keys</span>` })}</p>
           <label class="check"><input type="checkbox" id="f-forced" ${st.forced ? raw("checked") : ""} /> ${t("Use the read-only forced command (recommended)")}</label>
           ${st.forced
-            ? h`<div class="code" style="padding-right:90px">${key ? line : t("Loading the server key…")}${key ? h`<button class="btn secondary sm copy" id="copy-line">${icon("copy")}${t("Copy")}</button>` : ""}</div>
+            ? h`<div class="code" style="padding-right:130px">${key ? line : t("Loading the server key…")}${key ? h`<button class="btn secondary sm copy" id="copy-line">${icon("copy")}${t("Copy")}</button>` : ""}</div>
               <p class="muted small" style="margin:0">${ht("On the machine, install the script from the release archive first: {cmd}.", { cmd: h`<span class="mono">install -m 755 arca-src.sh /usr/local/bin/arca-src</span>` })} <a href="https://github.com/sanyadez/Arca/blob/main/docs/ssh-sources.md" target="_blank" rel="noopener">${t("Step-by-step guide")}</a></p>`
-            : h`<div class="code" style="padding-right:90px">${key ? key.publicKey : "…"}${key ? h`<button class="btn secondary sm copy" id="copy-line">${icon("copy")}${t("Copy")}</button>` : ""}</div>
+            : h`<div class="code" style="padding-right:130px">${key ? key.publicKey : "…"}${key ? h`<button class="btn secondary sm copy" id="copy-line">${icon("copy")}${t("Copy")}</button>` : ""}</div>
               <div class="notice warn">${icon("triangle-alert")}<div>${st.user ? t("Without the forced command, this key can run anything on the machine as {user}.", { user: st.user }) : t("Without the forced command, this key can run anything on the machine as that user.")}</div></div>`}
           <div style="border-top:1px solid var(--border);padding-top:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">${testButton()}</div>
         </div>` : ""}
       </div>`;
+  }
+
+  function clientFields() {
+    if (!clients.length) return h`<div class="notice info">${icon("info")}<div>${ht("No machines run a client yet. {link}.", { link: h`<a href="#/clients?new=1">${t("Add a client")}</a>` })}</div></div>`;
+    const c = clients.find((x) => x.name === st.client);
+    return h`<div class="field"><label for="f-client">${t("Client")}</label><select class="input big" id="f-client" ${editing ? raw("disabled") : ""}>${[...clients, ...(c ? [] : [{ name: st.client }])].map((x) => h`<option value="${x.name}" ${x.name === st.client ? raw("selected") : ""}>${x.name}</option>`)}</select>
+        <span class="hint" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${c ? clientBadge(c) : clientBadge({ known: false })}${c?.host ? h`<span class="mono small">${c.host}</span>` : ""}<a href="#/clients">${t("All clients")}</a></span></div>
+      <div class="field"><label for="f-cpath">${t("Path on the machine")}</label><input class="input big mono" id="f-cpath" value="${st.cpath}" placeholder="/home/me" spellcheck="false" /><span class="hint">${t("Give each client its own repository, so that a compromised machine sees only its own snapshots.")}</span></div>`;
   }
 
   function testButton() {
@@ -344,6 +365,12 @@ export async function page(el, params, { session, navigate }) {
     input("#f-user", (v) => (st.user = v));
     input("#f-port", (v) => (st.port = v));
     input("#f-rpath", (v) => (st.rpath = v));
+    input("#f-cpath", (v) => (st.cpath = v));
+    $("#f-client")?.addEventListener("change", (e) => {
+      st.client = e.target.value;
+      autoName();
+      draw();
+    });
     $("#f-name")?.addEventListener("input", (e) => {
       st.name = e.target.value.trim();
       st.nameTouched = true;

@@ -19,6 +19,7 @@ import * as snapshotJsM from "../ui/pages/snapshot.js" with { type: "text" };
 import * as sourceformJsM from "../ui/pages/sourceform.js" with { type: "text" };
 import * as repositoriesJsM from "../ui/pages/repositories.js" with { type: "text" };
 import * as accessJsM from "../ui/pages/access.js" with { type: "text" };
+import * as clientsJsM from "../ui/pages/clients.js" with { type: "text" };
 import * as recoveryJsM from "../ui/pages/recovery.js" with { type: "text" };
 import * as settingsJsM from "../ui/pages/settings.js" with { type: "text" };
 import { VERSION_STRING } from "../version";
@@ -30,7 +31,7 @@ const [indexHtml, tokensCss, appCss, iconsJs, libJs, ukJs, appJs] = [indexHtmlM,
 ];
 const PAGES: Record<string, unknown> = {
   overview: overviewJsM, runs: runsJsM, run: runJsM, sources: sourcesJsM, source: sourceJsM, snapshots: snapshotsJsM, snapshot: snapshotJsM, sourceform: sourceformJsM,
-  repositories: repositoriesJsM, access: accessJsM, recovery: recoveryJsM, settings: settingsJsM,
+  repositories: repositoriesJsM, access: accessJsM, clients: clientsJsM, recovery: recoveryJsM, settings: settingsJsM,
 };
 
 const ASSETS: Record<string, [string, string]> = {

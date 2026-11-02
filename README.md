@@ -80,8 +80,8 @@ Works now:
 - MCP for agents.
 - `arca-restore`: restore without the server.
 
-Planned: S3 and other cloud storage, several storages per source, database dumps, notifications, several users,
-clients in the web UI and restore onto a client.
+Planned: S3 and other cloud storage, several storages per source, database dumps, notifications, several users
+and restore onto a client.
 
 ## Install
 

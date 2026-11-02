@@ -25,14 +25,16 @@ machine but not across machines.
 
 Below, `http://backup.lan:7350` is the Arca server and `laptop` is the name of the client.
 
-**1. On the server**, create the client:
+**1. On the server**, create the client. In the web UI: **Clients → New client**. It shows the install command once
+and tells you when the machine has connected. On the command line:
 
 ```sh
 arca client add laptop --server http://backup.lan:7350
 systemctl restart arca
 ```
 
-It prints the client token (once) and the install command.
+It prints the client token (once) and the install command. A restart is needed only after this command: changes made in
+the web UI apply at once.
 
 **2. On the machine**, run the printed command:
 
@@ -44,8 +46,10 @@ curl -fsSL https://raw.githubusercontent.com/sanyadez/Arca/main/install.sh | sud
 It installs Arca, checks the token against the server, saves `/etc/arca/client.json` and starts `arca-client`.
 With Arca already installed, `arca client enroll --server … --token …` does the same without the service.
 
-**3. On the server**, create a repository for the client and add its folders as sources with the path
-`client://<client>/<folder>`:
+**3. On the server**, create a repository for the client and add its folders as sources. In the web UI:
+**Sources → New source → A client on the machine**. The wizard reads the folder on the machine (it needs the client online
+and not in the middle of a backup), so you can pick what to include; a source can also be created while the machine is
+offline. In the config file, the path of such a source is `client://<client>/<folder>`:
 
 ```json
 "repos": {
@@ -77,6 +81,8 @@ On the server (`--config`, default `/etc/arca/config.json`):
 | `arca client add <name> [--server URL]` | create a client token and print the install command |
 | `arca client list` | clients, when each was last seen, and their sources |
 | `arca client remove <name>` | remove the client token (sources must not use it) |
+
+The **Clients** page of the web UI does the same and shows each machine's state, host name, version and sources.
 
 On the machine (`--client-config`, default `/etc/arca/client.json`):
 

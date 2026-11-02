@@ -11,9 +11,9 @@ import { RemoteBackend } from "../backends/remote";
 import { Repository } from "../core/repo";
 import { backup, type BackupProgress } from "../core/backup";
 import { withLock } from "../core/lock";
-import { LocalSource } from "../core/source";
+import { LocalSource, summarizeListing } from "../core/source";
 import { VERSION_STRING } from "../version";
-import type { ClientBackupResult, ClientJob } from "../server/clients";
+import type { ClientBackupResult, ClientJob, ClientRequest, ClientRequestAnswer } from "../server/clients";
 
 export const DEFAULT_CLIENT_CONFIG = "/etc/arca/client.json";
 
@@ -83,8 +83,9 @@ export class ClientAgent {
     while (!this.stopped) {
       try {
         this.poller = new AbortController();
-        const { job } = await this.call<{ job: ClientJob | null }>("GET", `/poll?wait=${o.wait ?? 25}`, undefined, this.poller.signal);
+        const { job, request } = await this.call<{ job: ClientJob | null; request?: ClientRequest | null }>("GET", `/poll?wait=${o.wait ?? 25}`, undefined, this.poller.signal);
         pause = 1000;
+        if (request) await this.answer(request);
         if (job) await this.runJob(job);
       } catch (e: any) {
         if (this.stopped) break;
@@ -99,6 +100,17 @@ export class ClientAgent {
     this.stopped = true;
     this.poller?.abort();
     this.current?.abort();
+  }
+
+  /** Read a folder for the server (the source wizard). A failed read is an answer too. */
+  private async answer(r: ClientRequest) {
+    let a: ClientRequestAnswer;
+    try {
+      a = { ok: true, ...summarizeListing(await new LocalSource(r.path).list()) };
+    } catch (e: any) {
+      a = { ok: false, error: e?.message ?? String(e) };
+    }
+    await this.call("POST", `/requests/${r.id}`, a).catch((e) => this.log(`could not answer about ${r.path}: ${e?.message ?? e}`));
   }
 
   /** One backup job; the result (or the error) always goes back to the server. */

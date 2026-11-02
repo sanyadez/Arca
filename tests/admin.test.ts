@@ -33,6 +33,41 @@ const call = (method: string, path: string, body?: unknown, token = ADMIN) =>
   handler(new Request(`http://x${path}`, { method, headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) }));
 const onDisk = async () => JSON.parse(await readFile(cfgPath, "utf8"));
 
+describe("clients", () => {
+  test("add, refuse to remove while a source uses it, remove", async () => {
+    expect((await call("POST", "/api/clients", { name: "Bad Name" })).status).toBe(400);
+    const c = await j(await call("POST", "/api/clients", { name: "laptop" }));
+    expect(c.token).toStartWith("arca_");
+    expect((await onDisk()).tokens.find((t: any) => t.name === "laptop").scopes).toEqual(["client"]);
+    expect(JSON.stringify(await onDisk())).not.toContain(c.token);
+    expect((await call("POST", "/api/clients", { name: "laptop" })).status).toBe(409);
+
+    // The token works at once, without a restart.
+    expect((await handler(new Request("http://x/api/client/hello", { headers: { authorization: `Bearer ${c.token}`, "x-arca-host": "lap1" } }))).status).toBe(200);
+    expect((await j(await call("GET", "/api/clients")))[0]).toMatchObject({ name: "laptop", online: true, host: "lap1", sources: [] });
+
+    await svc.configStore!.update((raw) => {
+      raw.repos.tmp = { url: join(dir, "client-repo") };
+      raw.sources.lap = { path: "client://laptop/home/me", repo: "tmp" };
+    });
+    svc.applyConfig(await loadConfig(cfgPath));
+    const used = await call("DELETE", "/api/clients/laptop");
+    expect(used.status).toBe(409);
+    expect((await j(used)).error).toContain("lap");
+    await svc.configStore!.update((raw) => {
+      delete raw.sources.lap;
+      delete raw.repos.tmp;
+    });
+    svc.applyConfig(await loadConfig(cfgPath));
+
+    expect((await call("DELETE", "/api/clients/laptop")).status).toBe(200);
+    expect(await j(await call("GET", "/api/clients"))).toEqual([]);
+    expect((await handler(new Request("http://x/api/client/hello", { headers: { authorization: `Bearer ${c.token}` } }))).status).toBe(401);
+    expect((await call("DELETE", "/api/clients/admin")).status).toBe(404); // not a client: stays
+    expect(svc.clients.state("laptop").lastSeen).toBeNull();
+  });
+});
+
 describe("repositories and sources", () => {
   test("test storage, create a repository, add, edit and remove a source", async () => {
     const url = join(dir, "repo");

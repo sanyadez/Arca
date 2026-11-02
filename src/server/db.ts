@@ -196,6 +196,10 @@ export class RunsDb {
     this.db.run("INSERT INTO kv (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v", [k, JSON.stringify(v)]);
   }
 
+  deleteValue(k: string) {
+    this.db.run("DELETE FROM kv WHERE k = ?", [k]);
+  }
+
   lastOf(kind: RunKind, source: string): Run | null {
     return this.list({ kind, source, limit: 1 })[0] ?? null;
   }

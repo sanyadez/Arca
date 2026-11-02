@@ -48,7 +48,7 @@ export async function page(el, _params, { session }) {
         <div class="card pad" style="margin-top:24px">
           <h3>${t("Connect an AI agent (MCP)")}</h3>
           <p class="muted" style="margin:-6px 0 16px">${t("Agents connect over HTTP with a Bearer token. Give each agent only the scopes it needs.")}</p>
-          <div class="field"><label>${t("Server URL")}</label><div class="code" style="padding-right:90px">${mcpUrl}<button class="btn secondary sm copy" data-copy="${mcpUrl}">${icon("copy")}${t("Copy")}</button></div></div>
+          <div class="field"><label>${t("Server URL")}</label><div class="code" style="padding-right:130px">${mcpUrl}<button class="btn secondary sm copy" data-copy="${mcpUrl}">${icon("copy")}${t("Copy")}</button></div></div>
           <div class="field" style="margin-top:16px"><label>${t("Config for Claude Code")}</label><span class="hint">${t("Add to .mcp.json and set ARCA_TOKEN in your environment.")}</span>
             <div class="code" style="margin-top:6px">${mcpJson(mcpUrl)}<button class="btn secondary sm copy" data-copy="${mcpJson(mcpUrl)}">${icon("copy")}${t("Copy")}</button></div></div>
         </div>
@@ -120,12 +120,12 @@ export async function page(el, _params, { session }) {
     const cmd = `claude mcp add --transport http arca ${mcpUrl} --header "Authorization: Bearer ${tk.token}"`;
     await modal({
       title: h`<span style="display:flex;gap:10px;align-items:center"><span class="avatar" style="background:var(--ok-soft);color:var(--ok)">${icon("check")}</span>${t("Token created — copy it now")}</span>`,
-      body: h`<div class="field"><label>${t("Token")}</label><div class="code" style="white-space:normal;word-break:break-all;padding-right:90px;font-size:var(--text-sm)">${tk.token}<button class="btn primary sm copy" data-copy="${tk.token}">${icon("copy")}${t("Copy")}</button></div></div>
+      body: h`<div class="field"><label>${t("Token")}</label><div class="code" style="white-space:normal;word-break:break-all;padding-right:130px;font-size:var(--text-sm)">${tk.token}<button class="btn primary sm copy" data-copy="${tk.token}">${icon("copy")}${t("Copy")}</button></div></div>
         <div class="notice warn">${icon("triangle-alert")}<div>${t("You won't see it again. Arca stores only its hash.")}</div></div>
         <dl class="kv" style="grid-template-columns:repeat(3,1fr);border-top:1px solid var(--border);border-bottom:1px solid var(--border);padding:12px 0">
           <div><dt>${t("Name")}</dt><dd style="text-align:left">${tk.name}</dd></div><div><dt>${t("Scopes")}</dt><dd style="text-align:left">${tk.scopes.join(" · ")}</dd></div><div><dt>${t("Expires")}</dt><dd class="mono" style="text-align:left">${tk.expires ? rel(tk.expires) : t("never")}</dd></div></dl>
         <div class="field"><label>${t("Add to Claude Code")}</label><span class="hint">${t("This command includes the full token, so keep it private.")}</span>
-          <div class="code" style="margin-top:6px;padding-right:90px">${cmd}<button class="btn secondary sm copy" data-copy="${cmd}">${icon("copy")}${t("Copy")}</button></div></div>`,
+          <div class="code" style="margin-top:6px;padding-right:130px">${cmd}<button class="btn secondary sm copy" data-copy="${cmd}">${icon("copy")}${t("Copy")}</button></div></div>`,
       actions: [{ label: t("Done"), kind: "secondary", value: true }],
       onMount: (m) => {
         m.querySelector(".m-foot [data-v='__cancel']").remove();

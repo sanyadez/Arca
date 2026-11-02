@@ -53,6 +53,9 @@ const ROUTES: [string, string, TokenConf["scopes"][number], Handler][] = [
   ["GET", "/api/tokens", "admin", async (s) => admin.listTokens(s)],
   ["POST", "/api/tokens", "admin", async (s, _p, r) => admin.createToken(s, await jsonBody(r))],
   ["DELETE", "/api/tokens/:name", "admin", async (s, p) => admin.revokeToken(s, p.name!)],
+  ["GET", "/api/clients", "read", async (s) => admin.listClients(s)],
+  ["POST", "/api/clients", "admin", async (s, _p, r) => admin.createClient(s, await jsonBody(r))],
+  ["DELETE", "/api/clients/:name", "admin", async (s, p) => admin.removeClient(s, p.name!)],
   ["GET", "/api/ssh/key", "admin", async (s) => admin.sshKey(s)],
   ["GET", "/api/cron", "read", async (_s, _p, _r, _w, u) => admin.cronPreview(u.searchParams.get("expr") ?? "")],
   ["POST", "/api/retention/preview", "read", async (_s, _p, r) => {
@@ -243,9 +246,10 @@ async function clientApi(svc: Service, who: TokenConf, req: Request, url: URL): 
     return Response.json({ client: name, server: { version: VERSION_STRING, host: hostname() }, sources }, { headers: noStore });
   }
   if (p === "/poll" && req.method === "GET") {
-    const job = await svc.clients.poll(name, Number(url.searchParams.get("wait") ?? 25) * 1000, req.signal);
-    return Response.json({ job }, { headers: noStore });
+    return Response.json(await svc.clients.poll(name, Number(url.searchParams.get("wait") ?? 25) * 1000, req.signal), { headers: noStore });
   }
+  const answer = /^\/requests\/(\d+)$/.exec(p);
+  if (answer && req.method === "POST") return Response.json(svc.clients.answer(name, Number(answer[1]), await jsonBody(req)));
   const run = /^\/runs\/(\d+)\/(events|finish)$/.exec(p);
   if (run && req.method === "POST") {
     const b = await jsonBody(req);

@@ -13,7 +13,8 @@ import { Repository } from "../core/repo";
 import { prune } from "../core/maintenance";
 import { withLock } from "../core/lock";
 import { applyRetention, isEmptyPolicy, type RetentionPolicy } from "../core/retention";
-import { openSource } from "../sources";
+import { summarizeListing } from "../core/source";
+import { isClientSource, openSource, parseClientUrl } from "../sources";
 import { hashToken } from "./auth";
 import type { Config, SourceConf, TokenConf } from "./config";
 import { Cron } from "./cron";
@@ -254,6 +255,33 @@ export function noteTokenUse(svc: Service, t: TokenConf, via: "web" | "API" | "M
   svc.db.setValue(k, { last: new Date(now).toISOString(), via: [...new Set([...(cur?.via ?? []), via])].sort() });
 }
 
+// ── clients ──
+
+const sourcesOfClient = (svc: Service, name: string) =>
+  Object.entries(svc.cfg.sources)
+    .filter(([, s]) => isClientSource(s.path) && parseClientUrl(s.path).client === name)
+    .map(([n]) => n);
+
+export function listClients(svc: Service) {
+  return svc.clients.names().map((name) => ({ ...svc.clients.state(name), sources: sourcesOfClient(svc, name) }));
+}
+
+/** A client is a token with the client scope; the secret is returned only here. */
+export async function createClient(svc: Service, b: any) {
+  checkName("Client", b.name);
+  const { token, name } = await createToken(svc, { name: b.name, scopes: ["client"] });
+  return { name, token };
+}
+
+export async function removeClient(svc: Service, name: string) {
+  if (!svc.clients.names().includes(name)) throw new HttpError(404, `Unknown client: ${name}`);
+  const used = sourcesOfClient(svc, name);
+  if (used.length) throw new HttpError(409, `Sources use this client: ${used.join(", ")}. Remove them first.`);
+  await revokeToken(svc, name);
+  svc.clients.forget(name);
+  return { removed: name };
+}
+
 // ── SSH helper ──
 
 function sourceKeyPath(svc: Service) {
@@ -283,34 +311,21 @@ function lanAddresses(): string[] {
 export async function previewSource(svc: Service, b: any, depth = 2) {
   if (typeof b.path !== "string" || !b.path.trim()) throw new HttpError(400, "path is required");
   const ssh = b.path.startsWith("ssh://") ? { forced: !!b.ssh?.forced, identity: b.ssh?.identity, sshOptions: b.ssh?.sshOptions ?? ["StrictHostKeyChecking=accept-new"] } : {};
-  const src = openSource(b.path.trim(), ssh);
   const t0 = performance.now();
-  try {
-    const l = await src.list();
-    // folder sizes up to `depth` levels, for the "What" step of the wizard
-    const dirs = new Map<string, { size: number; files: number }>();
-    let total = 0;
-    for (const e of l.entries) {
-      if (e.type === "dir" && e.path.split("/").length <= depth) dirs.set(e.path, dirs.get(e.path) ?? { size: 0, files: 0 });
-      if (e.type !== "file") continue;
-      total += e.size;
-      const parts = e.path.split("/");
-      for (let i = 1; i <= Math.min(depth, parts.length - 1); i++) {
-        const d = parts.slice(0, i).join("/");
-        const v = dirs.get(d) ?? { size: 0, files: 0 };
-        v.size += e.size;
-        v.files++;
-        dirs.set(d, v);
-      }
+  const seconds = () => Math.round((performance.now() - t0) / 100) / 10;
+  if (isClientSource(b.path.trim())) {
+    try {
+      const { client, path } = parseClientUrl(b.path.trim());
+      const summary = await svc.clients.listFolder(client, path);
+      return { ok: true, seconds: seconds(), ...summary };
+    } catch (e: any) {
+      return { ok: false, error: e?.message ?? String(e) };
     }
-    return {
-      ok: true,
-      seconds: Math.round((performance.now() - t0) / 100) / 10,
-      files: l.entries.filter((e) => e.type === "file").length,
-      size: total,
-      dirs: [...dirs].map(([path, v]) => ({ path, ...v })).sort((a, c) => a.path.localeCompare(c.path)),
-      errors: l.errors.slice(0, 20),
-    };
+  }
+  const src = openSource(b.path.trim(), ssh);
+  try {
+    const summary = summarizeListing(await src.list(), depth);
+    return { ok: true, seconds: seconds(), ...summary };
   } catch (e: any) {
     return { ok: false, error: e?.message ?? String(e) };
   } finally {

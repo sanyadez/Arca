@@ -5,6 +5,12 @@ a format change always bumps `FORMAT_VERSION` and is mentioned here.
 
 ## Unreleased
 
+- Clients in the web UI: a **Clients** page (state, host, version, last seen, sources; add with the install command, waits
+  for the machine to connect; remove), a client type in the source wizard that reads the folder on the machine, the client's
+  state on the source page, a Clients filter in Sources. API: `GET/POST /api/clients`, `DELETE /api/clients/:name`.
+- `GET /api/client/poll` now answers `{ job, request }`: the server can ask a client to read a folder. Clients older than
+  this version ignore `request`; the wizard then says so, and backups work as before.
+
 ## 0.1.0-beta.2 — 2026-10-30
 
 - Clients (`arca client`, docs/clients.md): a machine backs up its own folders to the server. Sources

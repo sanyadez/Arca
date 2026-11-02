@@ -27,6 +27,35 @@ export interface ListResult {
   errors: { path: string; error: string }[];
 }
 
+export interface FolderSummary {
+  files: number;
+  size: number;
+  /** Folders up to `depth` levels with what they hold, for choosing what to back up. */
+  dirs: { path: string; size: number; files: number }[];
+  errors: { path: string; error: string }[];
+}
+
+export function summarizeListing(l: ListResult, depth = 2): FolderSummary {
+  const dirs = new Map<string, { size: number; files: number }>();
+  let size = 0;
+  let files = 0;
+  for (const e of l.entries) {
+    if (e.type === "dir" && e.path.split("/").length <= depth) dirs.set(e.path, dirs.get(e.path) ?? { size: 0, files: 0 });
+    if (e.type !== "file") continue;
+    files++;
+    size += e.size;
+    const parts = e.path.split("/");
+    for (let i = 1; i <= Math.min(depth, parts.length - 1); i++) {
+      const d = parts.slice(0, i).join("/");
+      const v = dirs.get(d) ?? { size: 0, files: 0 };
+      v.size += e.size;
+      v.files++;
+      dirs.set(d, v);
+    }
+  }
+  return { files, size, dirs: [...dirs].map(([path, v]) => ({ path, ...v })).sort((a, c) => a.path.localeCompare(c.path)), errors: l.errors.slice(0, 20) };
+}
+
 /** Sequential read: like FileHandle.read but without a position. 0 means EOF. */
 export interface ByteReader {
   read(buf: Uint8Array, offset: number, length: number): Promise<number>;

@@ -4,7 +4,8 @@
  * A client calls the server, never the other way round, so it works behind NAT: it long-polls for jobs,
  * runs the backup with the same core locally (chunking, deduplication and encryption happen on the client),
  * reaches the repository through the storage proxy below, streams progress and log lines, and reports the
- * result. Schedules, the queue, the history and retention stay on the server.
+ * result. Schedules, the queue, the history and retention stay on the server. The server can also ask a client
+ * to read a folder, so that the source wizard can show what is on the machine.
  *
  * The storage proxy only appends: a client may add data, index and snapshot files (named by the sha256 of
  * their contents, which is checked) and manage locks, nothing else. A stolen client token cannot delete or
@@ -13,6 +14,7 @@
 import { createHash } from "node:crypto";
 import { openBackend, type Backend } from "../backends";
 import { NotFoundError } from "../backends/types";
+import type { FolderSummary } from "../core/source";
 import { parseClientUrl } from "../sources";
 import { repoPassword, type Config } from "./config";
 import { HttpError, type JobControl } from "./service";
@@ -24,6 +26,9 @@ const SILENT_MS = 3 * 60_000;
 /** A job nobody picked up in this time fails: the client went away. */
 const PICKUP_MS = 2 * 60_000;
 const POLL_MAX_MS = 30_000;
+/** A client that is polling takes a request at once; if it does not, it is older than the server or stuck. */
+const REQUEST_PICKUP_MS = 10_000;
+const REQUEST_ANSWER_MS = 2 * 60_000;
 
 export interface ClientJob {
   runId: number;
@@ -47,6 +52,24 @@ export interface ClientBackupResult {
   errors: { path: string; error: string }[];
 }
 
+/** A question to the client outside any run. Clients that do not know it ignore the field. */
+export interface ClientRequest {
+  id: number;
+  kind: "list";
+  /** Folder on the client machine. */
+  path: string;
+}
+
+export type ClientRequestAnswer = ({ ok: true } & FolderSummary) | { ok: false; error: string };
+
+interface PendingRequest {
+  client: string;
+  request: ClientRequest;
+  settle: (a: ClientRequestAnswer | Error) => void;
+  /** Starts the time the client has to answer, once it has taken the request. */
+  taken: () => void;
+}
+
 interface Pending {
   client: string;
   job: ClientJob;
@@ -65,6 +88,8 @@ export interface ClientState {
   host: string | null;
   /** Run id of the job it is running now. */
   running: number | null;
+  /** False once its token is gone: the sources that name it cannot run. */
+  known: boolean;
 }
 
 type Meta = { at: number; version?: string; host?: string };
@@ -81,11 +106,15 @@ export class ClientHub {
   private running = new Map<number, Pending>();
   private waiters = new Map<string, Set<() => void>>();
   private backends = new Map<string, Backend>();
+  private requests = new Map<number, PendingRequest>();
+  private requestQueue = new Map<string, PendingRequest[]>();
+  private nextRequest = 1;
+  requestPickupMs = REQUEST_PICKUP_MS;
   private watchdog: ReturnType<typeof setInterval> | undefined;
 
   constructor(
     private cfg: () => Config,
-    private persist: { get: <T>(k: string) => T | null; set: (k: string, v: unknown) => void },
+    private persist: { get: <T>(k: string) => T | null; set: (k: string, v: unknown) => void; del: (k: string) => void },
   ) {}
 
   // ── presence ──
@@ -109,12 +138,69 @@ export class ClientHub {
       version: m?.version ?? null,
       host: m?.host ?? null,
       running: run?.job.runId ?? null,
+      known: this.names().includes(name),
     };
   }
 
   /** Clients known from the config: tokens with the client scope. */
   names(): string[] {
     return this.cfg().tokens.filter((t) => t.scopes.includes("client")).map((t) => t.name);
+  }
+
+  /** Drop what is remembered about a removed client, so that a new one with its name starts clean. */
+  forget(name: string) {
+    this.seen.delete(name);
+    this.persist.del(`client:${name}`);
+  }
+
+  // ── requests: reading a folder on the machine ──
+
+  /** What is in a folder on the client. Throws if the client cannot be asked or does not answer. */
+  listFolder(client: string, path: string): Promise<FolderSummary> {
+    if (!this.names().includes(client)) throw new Error(`Unknown client "${client}"`);
+    const st = this.state(client);
+    if (!st.online) throw new Error(`Client ${client} is offline${st.lastSeen ? ` (last seen ${st.lastSeen})` : " (it has never connected)"}`);
+    if (st.running) throw new Error(`Client ${client} is running a backup. Try again when it finishes.`);
+    const id = this.nextRequest++;
+    return new Promise<FolderSummary>((resolve, reject) => {
+      let timer: ReturnType<typeof setTimeout>;
+      const leave = () => {
+        clearTimeout(timer);
+        this.requests.delete(id);
+        const q = this.requestQueue.get(client);
+        if (q) this.requestQueue.set(client, q.filter((x) => x.request.id !== id));
+      };
+      const fail = (message: string) => {
+        leave();
+        reject(new Error(message));
+      };
+      const pending: PendingRequest = {
+        client,
+        request: { id, kind: "list", path },
+        settle: (a) => {
+          leave();
+          if (a instanceof Error) reject(a);
+          else if (a.ok) resolve({ files: a.files, size: a.size, dirs: a.dirs, errors: a.errors });
+          else reject(new Error(a.error));
+        },
+        taken: () => {
+          clearTimeout(timer);
+          timer = setTimeout(() => fail(`Client ${client} took too long to read ${path}`), REQUEST_ANSWER_MS);
+        },
+      };
+      timer = setTimeout(() => fail(`Client ${client} did not answer. It may be busy, or its Arca may be older than the server's: update it if this repeats.`), this.requestPickupMs);
+      this.requests.set(id, pending);
+      this.requestQueue.set(client, [...(this.requestQueue.get(client) ?? []), pending]);
+      this.wake(client);
+    });
+  }
+
+  answer(client: string, id: number, a: ClientRequestAnswer) {
+    this.touch(client);
+    const p = this.requests.get(id);
+    if (!p || p.client !== client) throw new HttpError(404, `No open request #${id} for this client`);
+    p.settle(a);
+    return { ok: true };
   }
 
   // ── jobs, server side ──
@@ -187,21 +273,27 @@ export class ClientHub {
 
   // ── jobs, client side (the HTTP API) ──
 
-  /** Long poll: the next job for this client, or null after `waitMs`. */
-  async poll(client: string, waitMs: number, signal?: AbortSignal): Promise<ClientJob | null> {
+  /** Long poll: the next request or job for this client, or nulls after `waitMs`. */
+  async poll(client: string, waitMs: number, signal?: AbortSignal): Promise<{ job: ClientJob | null; request: ClientRequest | null }> {
     const deadline = Date.now() + Math.min(Math.max(waitMs, 0), POLL_MAX_MS);
     for (;;) {
       this.touch(client);
+      // Requests first: someone is waiting in the wizard, and a job may then keep the client busy for hours.
+      const r = this.requestQueue.get(client)?.shift();
+      if (r) {
+        r.taken();
+        return { job: null, request: r.request };
+      }
       const p = this.queued.get(client)?.shift();
       if (p) {
         p.picked = true;
         p.last = Date.now();
         this.running.set(p.job.runId, p);
         p.ctl.log("client", `Client ${client} started the backup`);
-        return p.job;
+        return { job: p.job, request: null };
       }
       const left = deadline - Date.now();
-      if (left <= 0 || signal?.aborted) return null;
+      if (left <= 0 || signal?.aborted) return { job: null, request: null };
       await new Promise<void>((resolve) => {
         const set = this.waiters.get(client) ?? new Set();
         this.waiters.set(client, set);

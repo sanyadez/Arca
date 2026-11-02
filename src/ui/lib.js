@@ -171,8 +171,19 @@ export const stripe = (statuses, n = 14) =>
     return h`<i class="${s ?? ""}" title="${s ? LABELS[s] ?? s : t("no run")}"></i>`;
   })}</span>`;
 
-/** A source path: ssh sources show the host and then the path. */
+/** The state of a client machine. */
+export function clientBadge(c) {
+  if (!c.known) return h`<span class="badge error"><span class="dot"></span>${t("Unknown client")}</span>`;
+  if (c.running) return h`<span class="badge running">${icon("loader-circle", "spin")}${t("Backing up")}</span>`;
+  if (c.online) return h`<span class="badge ok"><span class="dot"></span>${t("Online")}</span>`;
+  if (c.lastSeen) return h`<span class="badge error"><span class="dot"></span>${t("Offline")}</span>`;
+  return h`<span class="badge never"><span class="dot"></span>${t("Not connected yet")}</span>`;
+}
+
+/** A source path: ssh sources show the host and then the path, client sources the client and then the path. */
 export function sourcePath(path) {
+  const c = /^client:\/\/([^/]+)(\/.*)$/.exec(path ?? "");
+  if (c) return h`<span class="path" title="${path}">${icon("laptop")}<b>${c[1]}</b>${c[2]}</span>`;
   const m = /^ssh:\/\/(?:([^@/]+)@)?([^/:]+)(?::\d+)?(\/.*)$/.exec(path ?? "");
   if (!m) return h`<span class="path" title="${path}">${path}</span>`;
   return h`<span class="path" title="${path}">${icon("server")}<b>${m[2]}</b>${m[3]}</span>`;

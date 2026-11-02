@@ -38,6 +38,8 @@ export async function page(el, _params, { session, navigate }) {
   }
 
   const isSsh = (s) => s.path.startsWith("ssh://");
+  const isClient = (s) => s.path.startsWith("client://");
+  const isLocal = (s) => !isSsh(s) && !isClient(s);
   const failing = (s) => s.status === "error" || s.status === "warning";
   const running = (s) => s.status === "running" || s.status === "queued";
 
@@ -45,14 +47,14 @@ export async function page(el, _params, { session, navigate }) {
     if (!data) return;
     const all = data.sources;
     el.querySelector("#sub").textContent = `${tn("{n} source", "{n} sources", all.length)} · ${tn("{n} repository", "{n} repositories", data.repos.length)}`;
-    const counts = { all: all.length, failing: all.filter(failing).length, running: all.filter(running).length, local: all.filter((s) => !isSsh(s)).length, ssh: all.filter(isSsh).length };
-    el.querySelector("#chips").innerHTML = [["all", t("All")], ["failing", t("Failing")], ["running", t("Running")], ["local", t("Local")], ["ssh", "SSH"]]
+    const counts = { all: all.length, failing: all.filter(failing).length, running: all.filter(running).length, local: all.filter(isLocal).length, ssh: all.filter(isSsh).length, client: all.filter(isClient).length };
+    el.querySelector("#chips").innerHTML = [["all", t("All")], ["failing", t("Failing")], ["running", t("Running")], ["local", t("Local")], ["ssh", "SSH"], ["client", t("Clients")]]
       .map(([k, l]) => h`<button class="chip ${filter === k ? "on" : ""}" data-k="${k}">${l} <span class="count">${counts[k]}</span></button>`.s)
       .join("");
     el.querySelectorAll("#chips [data-k]").forEach((b) => (b.onclick = () => ((filter = b.dataset.k), draw())));
 
     const shown = all
-      .filter((s) => filter === "all" || (filter === "failing" && failing(s)) || (filter === "running" && running(s)) || (filter === "local" && !isSsh(s)) || (filter === "ssh" && isSsh(s)))
+      .filter((s) => filter === "all" || (filter === "failing" && failing(s)) || (filter === "running" && running(s)) || (filter === "local" && isLocal(s)) || (filter === "ssh" && isSsh(s)) || (filter === "client" && isClient(s)))
       .filter((s) => !q || s.name.toLowerCase().includes(q) || s.path.toLowerCase().includes(q))
       .sort((a, b) => (ORDER[a.status] ?? 9) - (ORDER[b.status] ?? 9) || a.name.localeCompare(b.name));
 
